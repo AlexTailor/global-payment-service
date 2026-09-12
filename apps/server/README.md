@@ -58,48 +58,33 @@ worth demonstrating. Idempotency bookkeeping and event propagation don't get the
 
 Two tables, not four. `idempotency_record` and `outbox_event` collapse into columns on
 `transfer` — see `DECISION-LOG.md` #7 for the full reasoning (and #2 for what that means for the
-retry path); the short version: one
-endpoint means one idempotency scope, and one event type per transfer means the outbox
-table's only real job (make the event durable in the same commit as the fact it describes)
-is just as well served by a nullable column on the row that commit already writes.
+retry path); the short version: one endpoint means one idempotency scope, and one event type per
+transfer means the outbox table's only real job (make the event durable in the same commit as
+the fact it describes) is just as well served by a nullable column on the row that commit
+already writes.
 
-```sql
-create table account (
-    id         uuid primary key default gen_random_uuid(),
-    owner_name varchar(255) not null,
-    currency   varchar(3) not null,             -- EUR, USD, HUF
-    balance    numeric(19,4) not null,
-    version    bigint not null default 0        -- optimistic lock
-);
+**Implemented**: `src/main/resources/db/migration/V1__init.sql` (Flyway-managed — `ddl-auto` is
+`validate`, not `update`, in both `application.properties` and the test config, see §9). That
+file is the source of truth for the exact columns/indexes; two decisions worth calling out since
+they aren't obvious from reading it:
 
-create table transfer (
-    id               uuid primary key default gen_random_uuid(),
-    idempotency_key  varchar(255) not null,
-    from_account_id  uuid not null references account(id),
-    to_account_id    uuid not null references account(id),
-    amount           numeric(19,4) not null,      -- in source_currency
-    source_currency  varchar(3) not null,         -- must equal from_account.currency, see §3
-    target_currency  varchar(3) not null,         -- always to_account.currency, see §3
-    exchange_rate    numeric(19,8),                -- null if source_currency = target_currency
-    status           varchar(20) not null,          -- PROCESSING, COMPLETED, FAILED
-    notified_at      timestamptz,                   -- null = event not yet published
-    created_at       timestamptz not null default now()
-);
-
-create unique index ux_transfer_idempotency_key on transfer(idempotency_key);
-create index ix_transfer_from_account on transfer(from_account_id);
-create index ix_transfer_to_account on transfer(to_account_id);
-create index ix_transfer_unnotified on transfer(created_at) where notified_at is null;
-```
+- **Primary keys are generated in application code** (Hibernate's UUID generator on the entity),
+  not by a database default expression. Skips the question of whether Postgres's
+  `gen_random_uuid()` and H2's UUID function agree — they don't need to, since neither is ever
+  called.
+- **No Postgres-only syntax, including no partial/filtered index.** The migration runs
+  unmodified against both real Postgres (docker-compose, prod) and H2 in PostgreSQL-compatibility
+  mode (tests) — see §9 for why that matters. This was found the hard way: an earlier draft had
+  `create index ... where notified_at is null` (matching real Postgres fine), which fails on H2
+  with a syntax error even in `MODE=PostgreSQL` — H2 doesn't support filtered indexes. Replaced
+  with a plain composite index on `(status, notified_at)`, which fits the publisher's actual query
+  (§7) at least as well anyway.
 
 Deliberately left out, with the reasoning for each in the root `README.md`'s "Key technical
 decisions" table: a `request_hash` column for detecting idempotency-key reuse with a
 *different* payload (the spec only defines same-key-same-payload behavior — log the mismatch
 case as a TODO instead, see §3), and any stored response snapshot for replay (the `transfer`
 row already has everything needed to re-serialize the original `201`).
-
-Use Flyway (`src/main/resources/db/migration/V1__init.sql`) rather than
-`ddl-auto: update` — worth the five minutes, and it's a positive signal in review.
 
 ---
 
@@ -372,7 +357,14 @@ upstream of it should).
   The one thing this doesn't cover is Postgres-specific SQL, but the chosen locking mechanism
   (`@Version`/`OptimisticLockException`, §5) is enforced by Hibernate, not the database, so H2
   exercises the real code path — the earlier assumption that locking needs real Postgres was
-  really about pessimistic `SELECT ... FOR UPDATE`, which isn't the path taken here.
+  really about pessimistic `SELECT ... FOR UPDATE`, which isn't the path taken here. The test
+  datasource (`src/test/resources/application.properties`) points H2 at
+  `jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE` specifically so Flyway runs the
+  *actual* `V1__init.sql` here too, rather than tests exercising a schema Hibernate
+  auto-generated from the entities — the two could otherwise silently drift apart. This needed
+  `org.springframework.boot:spring-boot-flyway` added explicitly (Spring Boot 4 split Flyway's
+  autoconfiguration out of `spring-boot-autoconfigure` into its own module — `flyway-core` alone
+  on the classpath silently does nothing, no error, no log line, easy to miss).
 - **Concurrency test** (the one that actually proves the assignment's core requirement):
   fire the same idempotency key twice concurrently, assert one `201` + one `409`/replay, and
   exactly one balance change. Do the same for two different transfers hitting the same

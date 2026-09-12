@@ -4,9 +4,9 @@ A payment gateway: Spring Boot backend managing accounts and transfers, React fr
 it. Built as an Nx monorepo (`apps/client` + `apps/server`) so both stacks share one task
 runner — see [Running the app](#running-the-app) for the current commands.
 
-**Status**: initial project scaffold only (Nx-generated React app + Spring Boot app, wired
-together, nothing more). No accounts/transfers domain logic, idempotency, outbox, or FX
-resilience code exists yet — those are the target design described below and are tracked as
+**Status**: Nx/Spring Boot scaffold plus the database schema (Flyway migration for `account` and
+`transfer`, see [Backend notes](#backend-notes)). No entities, endpoints, idempotency, outbox, or
+FX resilience code exists yet — those are the target design described below and are tracked as
 the first items in [TODO](#todo).
 
 ## Tech stack
@@ -15,7 +15,7 @@ the first items in [TODO](#todo).
 |---|---|---|
 | Backend language/framework | Java 21, Spring Boot 4.x | Mandated by the assignment |
 | Backend build | Gradle, wired into the Nx project graph via `@nx/gradle` | One task runner for both apps — every Gradle task shows up as an Nx target automatically, no hand-written config |
-| Database | Postgres (Docker Compose), migrations TBD | Real locking semantics for the concurrency requirements — H2 would mask them |
+| Database | Postgres (Docker Compose), Flyway migrations | Real locking semantics for the concurrency requirements — H2 would mask them |
 | Backend resilience | Resilience4j (retry, circuit breaker, time limiter) — planned | Standard Spring-ecosystem fit for the flaky FX dependency |
 | Frontend | React + TypeScript, Vite | Mandated language/framework; Vite over Next.js since there's no SSR/routing-server need for a 3-screen SPA, and Nx already provides the monorepo tooling a meta-framework would otherwise bring |
 | Frontend data layer | TanStack Query | Server-state caching, retry, and mutation state (loading/error) for free on the transfer flow |
@@ -139,16 +139,16 @@ Full reasoning: `DECISION-LOG.md` #4 and #7, algorithm: `server/README.md` §4.
 
 Roughly in the order I'd tackle them:
 
-1. Account and transfer domain model + `POST /api/transfers` + transactions query endpoint —
-   nothing works end-to-end without this.
-2. `X-Idempotency-Key` handling (insert-first-then-branch + concurrency test) — a stated hard
+1. ~~Flyway migration for `account`/`transfer`~~ — done (`db/migration/V1__init.sql`), so the
+   next steps build entities against a real schema instead of `ddl-auto=update`.
+2. `Account`/`Transfer` JPA entities + repositories + `POST /api/transfers` + transactions query
+   endpoint — nothing works end-to-end without this.
+3. `X-Idempotency-Key` handling (insert-first-then-branch + concurrency test) — a stated hard
    requirement, and easiest to get right before other logic builds on top of it.
-3. Optimistic-locking retry on `Account` balance updates.
-4. Mocked FX API + Resilience4j wrapping (retry/circuit breaker/time limiter).
-5. Outbox table + scheduled publisher for Fraud Detection / Notification Center.
-6. The three frontend screens (Accounts, Transfer, Transactions) against the above.
-7. Flyway migrations, replacing `spring.jpa.hibernate.ddl-auto=update` (fine for scaffolding,
-   not for anything real).
+4. Optimistic-locking retry on `Account` balance updates.
+5. Mocked FX API + Resilience4j wrapping (retry/circuit breaker/time limiter).
+6. Outbox publisher (`transfer.notified_at` polling) for Fraud Detection / Notification Center.
+7. The three frontend screens (Accounts, Transfer, Transactions) against the above.
 8. Real message broker (Kafka/RabbitMQ) instead of the outbox + webhook stand-in.
 9. Cypress e2e for the create-account → transfer → see-transaction path.
 10. Auth/authz on the API (not a stated requirement — explicitly out of scope here).
@@ -202,16 +202,23 @@ cd apps/server
 
 ### Backend notes
 
-Two datasources are wired in for two different purposes:
+The schema is Flyway-managed (`apps/server/src/main/resources/db/migration/V1__init.sql`,
+`account` + `transfer` tables — see `server/README.md` §2); `spring.jpa.hibernate.ddl-auto` is
+`validate` everywhere, never `update`. Two datasources run that same migration for two different
+purposes:
 
 - **PostgreSQL** is the real datasource, configured via `spring.datasource.*` in
   `application.properties` (`docker-compose.yml` at the repo root brings up a matching local
-  instance on `:5432`, default db/user/password `global_payment_service` / `postgres` /
-  `postgres`; override with the `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
-  env vars for other environments).
-- **H2** is only for tests: `src/test/resources/application.properties` overrides the main
-  config with no datasource URL, so Spring Boot's embedded-database autoconfiguration falls back
-  to H2 and `nx run server:test` never needs Postgres or Docker running.
+  instance mapped to host port `:5732` → the container's standard `5432`, default db/user/password
+  `global_payment_service` / `postgres` / `postgres`; override with the `DB_HOST` / `DB_PORT` /
+  `DB_NAME` / `DB_USER` / `DB_PASSWORD` env vars for other environments).
+- **H2** is for tests: `src/test/resources/application.properties` points at
+  `jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE` so Flyway runs the *same*
+  `V1__init.sql` there too (not a Hibernate-autogenerated schema that could drift from it) —
+  `nx run server:test` still never needs Postgres or Docker running. Needs
+  `org.springframework.boot:spring-boot-flyway` on the classpath explicitly: Spring Boot 4 split
+  Flyway's autoconfiguration out of `spring-boot-autoconfigure`, so `flyway-core` alone silently
+  does nothing (no error, no log line).
 
 ### Frontend notes
 
