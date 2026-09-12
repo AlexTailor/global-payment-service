@@ -16,18 +16,21 @@ Cut whatever the 10-12h budget won't allow and log it in the root README's TODO 
 com.globalpayment.server
 ├── ServerApplication.java
 ├── account
-│   ├── Account.java                 (entity)
+│   ├── Account.java                       (entity)
 │   ├── AccountController.java
 │   ├── AccountService.java
 │   ├── AccountRepository.java
+│   ├── AccountNotFoundException.java      (thrown by both account and transfer lookups, mapped to `404`)
 │   └── dto/ (CreateAccountRequest, AccountResponse)
 ├── transfer
-│   ├── Transfer.java                (entity — also carries idempotency + notification state, see §2)
-│   ├── TransferStatus.java          (enum: PROCESSING, COMPLETED, FAILED)
+│   ├── Transfer.java                      (entity — also carries idempotency + notification state, see §2)
+│   ├── TransferStatus.java                (enum: PROCESSING, COMPLETED, FAILED)
 │   ├── TransferController.java
-│   ├── TransferService.java         ← core orchestration + idempotency branching lives here
+│   ├── TransferService.java               ← core orchestration + idempotency branching lives here
 │   ├── TransferRepository.java
-│   ├── TransferEventPublisher.java  (scheduled poller over notified_at, see §7)
+│   ├── TransferEventPublisher.java        (scheduled poller over notified_at, see §7)
+│   ├── IdempotencyConflictException.java  (thrown by §4's two `409` branches)
+│   ├── InsufficientBalanceException.java  (thrown by §5's balance check, mapped to `409`)
 │   └── dto/ (TransferRequest, TransferResponse)
 ├── fx
 │   ├── ExchangeRateClient.java           (interface — port)
@@ -144,25 +147,49 @@ on POST /api/transfers:
   catch unique_violation:
     existing = select * from transfer where idempotency_key = key
     if existing.status == 'PROCESSING':
-        return 409  // genuine concurrent duplicate, client should retry later
+        throw IdempotencyConflictException  // -> 409, genuine concurrent duplicate
     if existing.status == 'COMPLETED':
-        return 201 with existing  // safe replay — the row IS the response
+        return existing  // -> 201, safe replay — the row IS the response
     if existing.status == 'FAILED':
         rows = update transfer set status='PROCESSING'
                where id = existing.id and status = 'FAILED'
         if rows == 0:
-            return 409  // another concurrent retry already claimed this row
+            throw IdempotencyConflictException  // -> 409, another concurrent retry already claimed this row
         // else: this call now owns the retry, fall through to execution below
 
   // this call is now the one PROCESSING row for this key
+
+  // resolve the rate ONCE, before any retry loop below. Resilience4j's own @Retry/
+  // @CircuitBreaker/@TimeLimiter around getRate() (§6) already owns FX-flakiness retries —
+  // nothing past this point calls the FX client again for this attempt
   try:
-      execute the transfer (debit/credit, FX lookup) inside the same transaction
-      update this row set status='COMPLETED'
-      return 201 this row
-  catch any exception:
+      rate = (source_currency == target_currency) ? 1
+             : exchangeRateClient.getRate(source_currency, target_currency)
+  catch ExchangeRateUnavailableException:
+      update this row set status='FAILED'
+      rethrow / map to 503
+
+  // apply the already-resolved rate — the ONLY part retried on OptimisticLockException
+  // (bounded, §5). A retry re-reads the current account balances but reuses this same
+  // `rate`; it never touches the FX client
+  try:
+      debit fromAccount by amount; credit toAccount by amount * rate   // one @Transactional
+      update this row set status='COMPLETED', exchange_rate=rate
+      return this row  // -> 201, controller sets the status
+  catch OptimisticLockException:
+      retry this block (bounded, §5) — same `rate`, same claimed row, fresh account reads
+  catch any other exception:
       update this row set status='FAILED'
       rethrow / map to error response
 ```
+
+`TransferService` never returns or throws an HTTP status — everywhere above that says `-> 4xx`
+means "throw the matching domain exception" (`IdempotencyConflictException`,
+`AccountNotFoundException`, `InsufficientBalanceException`, `ExchangeRateUnavailableException`);
+everywhere that says `-> 201` means "return the `Transfer`, the controller's
+`@ResponseStatus(HttpStatus.CREATED)` handles the rest." `GlobalExceptionHandler` (§8) is the
+only place that turns an exception into a status — that's the whole reason it exists, and having
+this method return raw status codes at the top would go around it.
 
 The insert-first-then-branch-on-conflict shape is what actually closes the race: two
 concurrent requests with the same key both attempt the insert, the DB's unique constraint
@@ -185,9 +212,23 @@ finishes and only then finds out it lost. That means the initial
 `insert ... status='PROCESSING'` (and the `FAILED → PROCESSING` update above) needs to commit
 in its own short transaction *before* the slow work (the FX call, the debit/credit) starts —
 otherwise Postgres's row lock on the not-yet-committed write just makes the second request
-wait instead of returning `409` promptly. So this is two `@Transactional` boundaries in
-`TransferService`, not one: a fast one to claim the key, a second to execute and finalize the
-status.
+wait instead of returning `409` promptly. So this is three boundaries in `TransferService`, not
+one: a fast `@Transactional` to claim the key, a plain (non-transactional) call to resolve the
+rate, and a separate `@Transactional` to apply it — see below for why the rate call sits outside
+both transactions.
+
+**The FX call is resolved once and sits outside the retry loop, on purpose.** `TransferService`
+already delegates FX-flakiness handling to Resilience4j (`@Retry`/`@CircuitBreaker`/
+`@TimeLimiter` around `getRate()`, §6) — that's the mechanism that's supposed to absorb the
+mocked API's 503s and latency, and it's wasted effort to build a second, overlapping retry
+around the same call. So `getRate()` is called exactly once per attempt, its result held in a
+local variable, and only the debit+credit+status-update step — the part that actually touches
+`account.version` — is wrapped in the `@Transactional` method that gets retried on
+`OptimisticLockException` (§5). A lock-conflict retry re-reads the accounts and re-applies the
+same already-resolved `rate`; it never calls `getRate()` again. Two independent retry policies
+stacked on one call would be redundant at best (Resilience4j is already the right tool for FX
+flakiness) and incoherent at worst (a mocked-random rate resolving to a different value on each
+lock retry, for a `Transfer` row that can only record one `exchange_rate`).
 
 Test this with a real concurrency test: fire the same request twice in parallel
 (`CompletableFuture` + `ExecutorService`, against the app's normal H2 test datasource — see
@@ -206,9 +247,17 @@ account at once (e.g. two different transfers both debiting account A).
 
 - Add `@Version` to `Account.balance`'s entity (the `version` column above). JPA will throw
   `OptimisticLockException` on a conflicting concurrent update.
-- In `TransferService`, wrap the debit+credit in a single `@Transactional` method; catch the
-  optimistic-lock failure at the call site and retry a bounded number of times (2-3) with a
-  short backoff before surfacing a `409`/`503` to the client.
+- In `TransferService`, wrap **only** the debit+credit+status-update step in a single
+  `@Transactional` method — not the FX lookup, which already happened once beforehand (§4).
+  Catch the optimistic-lock failure at the call site and retry that same method a bounded
+  number of times (2-3) with a short backoff, passing in the same already-resolved rate each
+  time, before surfacing a `409`/`503` to the client.
+- **The insufficient-balance check must read `fromAccount.balance` fresh, inside this same
+  retried method** — not a value read earlier (e.g. during the phase-1 validation, before the
+  row was even claimed). Optimistic locking's whole guarantee comes from re-reading the entity
+  on every attempt; checking sufficiency against a balance cached from an earlier step would
+  silently defeat that guarantee and let an overdraft slip through on the very race this
+  mechanism exists to prevent.
 
 ---
 
@@ -219,6 +268,11 @@ public interface ExchangeRateClient {
     BigDecimal getRate(String from, String to);
 }
 ```
+
+`getRate(from, to)` returns units of `to` per 1 unit of `from` — e.g. `getRate("USD", "EUR")` ≈
+`0.92`, so `amount_usd × rate = amount_eur`. That's the direction §4's `credit toAccount by
+amount * rate` assumes; get this backwards and every cross-currency transfer silently credits
+the wrong amount.
 
 **Decided: the flaky external API is simulated in-process, not a real separate service.**
 `MockExchangeRateClient` computes a rate and, before returning it, randomly throws
@@ -255,6 +309,12 @@ half-applied — the row persists, is retryable via the same idempotency key (wi
 from §4), and stays visible in `GET /api/transfers` (§3). This only holds because the FX call
 happens *before* any debit/credit — never resolve the rate after money has started moving.
 
+**`getRate()` is called exactly once per transfer attempt.** This annotated method is the only
+retry mechanism that should ever touch it — Resilience4j owns FX-flakiness handling completely.
+The account-balance optimistic-lock retry (§5) is a separate concern (contention on `Account`,
+not FX unreliability) and must not re-invoke this method; it reuses the rate already resolved
+here. See §4 for how the two retry loops stay scoped to their own transactional steps.
+
 ---
 
 ## 7. Propagating successful transfers (Fraud/Notification)
@@ -288,9 +348,17 @@ matters; the transport is swappable later.
 
 One `@ControllerAdvice` (`GlobalExceptionHandler`) mapping domain exceptions to HTTP status,
 returning a consistent `ApiError { code, message, timestamp }` body. Keeps `TransferService`
-free of HTTP concerns — it throws `AccountNotFoundException`,
-`InsufficientBalanceException`, `ExchangeRateUnavailableException`, `IdempotencyConflictException`;
-the advice class does the translation.
+free of HTTP concerns — it only ever throws domain exceptions or returns a `Transfer`; the
+advice class is the *only* place that decides a status code (see §4's note on why nothing
+upstream of it should).
+
+| Exception | Status |
+|---|---|
+| `IdempotencyConflictException` | `409` |
+| `AccountNotFoundException` | `404` |
+| `InsufficientBalanceException` | `409` |
+| `ExchangeRateUnavailableException` | `503` |
+| Bean-validation failures (negative amount, same account both sides, unknown currency, missing header) | `400` |
 
 ---
 
