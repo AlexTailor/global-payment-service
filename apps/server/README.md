@@ -31,6 +31,10 @@ com.globalpayment.server
 │   ├── TransferEventPublisher.java        (scheduled poller over notified_at, see §7)
 │   ├── IdempotencyConflictException.java  (thrown by §4's two `409` branches)
 │   ├── InsufficientBalanceException.java  (thrown by §5's balance check, mapped to `409`)
+│   ├── InvalidTransferException.java      (cross-field validation the request DTO can't express
+│   │                                        alone — same account both sides, currency not
+│   │                                        matching the source account, cross-currency not yet
+│   │                                        supported; mapped to `400`)
 │   └── dto/ (TransferRequest, TransferResponse)
 ├── fx
 │   ├── ExchangeRateClient.java           (interface — port)
@@ -342,8 +346,14 @@ upstream of it should).
 | `IdempotencyConflictException` | `409` |
 | `AccountNotFoundException` | `404` |
 | `InsufficientBalanceException` | `409` |
+| `InvalidTransferException` | `400` |
 | `ExchangeRateUnavailableException` | `503` |
-| Bean-validation failures (negative amount, same account both sides, unknown currency, missing header) | `400` |
+
+`InvalidTransferException` covers what `@Valid` on the request DTO can't reach on its own (same
+account both sides, `currency` not matching the source account, cross-currency not yet
+supported) — anything needing the looked-up accounts. Bean validation (negative amount, missing
+fields), an unparseable `currency` enum value, and a missing `X-Idempotency-Key` header are all
+`400` via Spring's own default handling — no custom exception needed for those.
 
 ---
 

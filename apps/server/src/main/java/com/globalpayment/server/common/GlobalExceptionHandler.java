@@ -1,6 +1,8 @@
 package com.globalpayment.server.common;
 
 import com.globalpayment.server.account.AccountNotFoundException;
+import com.globalpayment.server.transfer.InsufficientBalanceException;
+import com.globalpayment.server.transfer.InvalidTransferException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -17,5 +19,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleAccountNotFound(AccountNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(InsufficientBalanceException.class)
+    public ResponseEntity<ApiError> handleInsufficientBalance(InsufficientBalanceException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidTransferException.class)
+    public ResponseEntity<ApiError> handleInvalidTransfer(InvalidTransferException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
     }
 }
