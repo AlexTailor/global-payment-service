@@ -177,7 +177,7 @@ npm install                       # install JS deps (once, or after touching app
 docker compose up -d postgres     # start local Postgres (needed for bootRun, not for `test`)
 
 npx nx dev client                 # React dev server (Vite)
-npx nx run server:bootRun         # Spring Boot app on :8080
+npx nx run server:bootRun         # Spring Boot app on :8080 — API docs at :8080/swagger-ui/index.html
 
 npx nx run-many -t build          # build both apps
 npx nx run-many -t test           # test both apps
