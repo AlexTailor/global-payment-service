@@ -7,6 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.globalpayment.server.common.Currency;
+import java.math.BigDecimal;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +23,9 @@ class AccountControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private AccountRepository accountRepository;
 
     @Test
     void createAccountReturnsCreatedAccount() throws Exception {
@@ -72,5 +78,20 @@ class AccountControllerTest {
         mockMvc.perform(get("/api/accounts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].ownerName", hasItem("Katherine Johnson")));
+    }
+
+    @Test
+    void getAccountReturnsTheMatchingAccount() throws Exception {
+        Account account = accountRepository.save(new Account("Grace Hopper", Currency.USD, BigDecimal.TEN));
+
+        mockMvc.perform(get("/api/accounts/{id}", account.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(account.getId().toString()))
+                .andExpect(jsonPath("$.ownerName").value("Grace Hopper"));
+    }
+
+    @Test
+    void getAccountReturnsNotFoundForUnknownId() throws Exception {
+        mockMvc.perform(get("/api/accounts/{id}", UUID.randomUUID())).andExpect(status().isNotFound());
     }
 }

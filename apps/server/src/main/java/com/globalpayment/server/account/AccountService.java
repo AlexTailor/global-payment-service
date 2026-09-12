@@ -2,6 +2,7 @@ package com.globalpayment.server.account;
 
 import com.globalpayment.server.account.dto.CreateAccountRequest;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -21,5 +22,9 @@ public class AccountService {
 
     public List<Account> listAccounts() {
         return accountRepository.findAll();
+    }
+
+    public Account getAccount(UUID id) {
+        return accountRepository.findById(id).orElseThrow(() -> new AccountNotFoundException(id));
     }
 }

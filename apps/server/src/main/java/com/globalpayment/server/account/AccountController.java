@@ -4,8 +4,10 @@ import com.globalpayment.server.account.dto.AccountResponse;
 import com.globalpayment.server.account.dto.CreateAccountRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,5 +34,10 @@ public class AccountController {
     @GetMapping
     public List<AccountResponse> listAccounts() {
         return accountService.listAccounts().stream().map(AccountResponse::from).toList();
+    }
+
+    @GetMapping("/{id}")
+    public AccountResponse getAccount(@PathVariable UUID id) {
+        return AccountResponse.from(accountService.getAccount(id));
     }
 }
