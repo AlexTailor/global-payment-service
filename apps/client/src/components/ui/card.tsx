@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "cn"
 
-function Card({
+function CardRoot({
   className,
   size = "default",
   ...props
@@ -91,12 +91,12 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-export {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardAction,
-  CardDescription,
-  CardContent,
+export const Card = {
+  Root: CardRoot,
+  Header: CardHeader,
+  Title: CardTitle,
+  Description: CardDescription,
+  Action: CardAction,
+  Content: CardContent,
+  Footer: CardFooter,
 }

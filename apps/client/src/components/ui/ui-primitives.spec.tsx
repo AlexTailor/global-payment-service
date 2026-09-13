@@ -22,7 +22,7 @@ describe('UI primitives', () => {
         <StatusIcon status="COMPLETED" direction="in" />
         <StatusIcon status="PROCESSING" direction="out" />
         <StatusIcon status="FAILED" direction="out" />
-        <Card>Card content</Card>
+        <Card.Root>Card content</Card.Root>
         <Input placeholder="Amount" />
         <Skeleton width={56} height={12} />
         <SegmentedControl.Root defaultValue="EUR">
