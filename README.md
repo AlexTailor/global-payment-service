@@ -121,6 +121,13 @@ browser lines up with the backend's idempotency contract instead of minting a ne
 
 Fuller reasoning and rejected alternatives for each of these: see `DECISION-LOG.md`.
 
+**Screen structure, UX, and visual design** — TASK.md asks what was prioritized here beyond the
+three required capabilities (Accounts, Transfer, Transactions). Not yet written: there's no
+frontend code yet to honestly rationalize decisions about (navigation structure, loading/error
+feedback on the transfer flow, optimistic UI on retry, etc.) — this section gets filled in
+alongside the frontend build itself, not before it, so it describes what was actually built
+rather than a plan that may not survive contact with it.
+
 ## How I started
 
 Started by scaffolding the Nx workspace itself — an `@nx/react` app for the client and a
@@ -132,19 +139,58 @@ exists.
 
 ## Edge cases
 
-*(resilience, concurrency, reliability — expand as each is implemented; the intended handling
-for idempotency races, optimistic-lock conflicts, and FX failures is described under
-[Key technical decisions](#key-technical-decisions) above)*
+Resilience, concurrency, and reliability handling — all implemented, per
+[Key technical decisions](#key-technical-decisions) above:
 
-One resolved up front since it affects the API contract directly: a transfer that fails for any
-reason (FX exhausted, insufficient balance, unknown account, validation) leaves a `Transfer` row
-behind in `FAILED` status — created as `PROCESSING` before the failure, flipped in place rather
-than deleted — so it stays queryable via `GET /api/transfers`. A retry with the same key reuses
-that exact row via a guarded update (`FAILED → PROCESSING`, only when no concurrent retry has
-already claimed it) rather than replaying a stored response. That's only safe because FX
-resolution and validation always run before any balance mutation, and the debit/credit/`COMPLETED`
-update happen in one transaction — a row stuck at `FAILED` always means zero balance movement.
-Full reasoning: `DECISION-LOG.md` #4 and #7, algorithm: `server/README.md` §4.
+- **Idempotency races** (same key, concurrent requests): the losing request reads back the
+  winner's state and responds accordingly (`PROCESSING` → `409`, `COMPLETED` → replay `201`) —
+  server README §4, `TransferIdempotencyTest`.
+- **A transfer that fails for any reason** (FX exhausted, insufficient balance, unknown account,
+  validation) leaves a `Transfer` row behind in `FAILED` status — created as `PROCESSING` before
+  the failure, flipped in place rather than deleted — so it stays queryable via
+  `GET /api/transfers`. A retry with the same key reuses that exact row via a guarded update
+  (`FAILED → PROCESSING`, only when no concurrent retry has already claimed it) rather than
+  replaying a stored response. That's only safe because FX resolution and validation always run
+  before any balance mutation, and the debit/credit/`COMPLETED` update happen in one transaction
+  — a row stuck at `FAILED` always means zero balance movement. Full reasoning: `DECISION-LOG.md`
+  #4 and #7, algorithm: `server/README.md` §4.
+- **Different idempotency keys hitting the same account concurrently**: bounded optimistic-lock
+  retry (3 attempts) on the account-version conflict, independent of the idempotency mechanism
+  above — server README §5, `TransferServiceRetryTest` (deterministic; real-thread races don't
+  reliably force the interleaving, see that test's docstring for why).
+- **FX API flakiness** (503s, latency): Resilience4j retry + circuit breaker + time limiter
+  around the FX client, failing the transfer cleanly rather than proceeding without a confirmed
+  rate — server README §6.
+- **Outbox delivery failure**: a failed notification attempt leaves `notified_at` null and is
+  retried on the next poll; one transfer's failure doesn't block others in the same poll — server
+  README §7, `TransferEventPublisherTest`.
+
+## Testing
+
+Approach across the stack (backend only exists so far — frontend testing is planned per the
+[tech stack](#tech-stack) table's "why" column, not yet built):
+
+- **Unit** (deterministic, no Spring context or database): `TransferServiceRetryTest` mocks
+  `TransferPersistence` to force an optimistic-lock conflict and verify the retry loop itself —
+  chosen specifically because real concurrent threads don't reliably interleave enough to trigger
+  the conflict naturally (confirmed empirically, see `DECISION-LOG.md`'s implementation note on
+  §5). `TransferEventPublisherTest` mocks the repository/notifier the same way for the outbox
+  publish/retry logic.
+- **Integration** (`@SpringBootTest`, H2 — no Testcontainers, see the tech-stack table's "why"):
+  `AccountControllerTest`, `TransferControllerTest`, `TransferFxTest` (FX success/failure with a
+  `@MockitoBean`-replaced `ExchangeRateClient`, for determinism the real randomized mock can't
+  give), `TransferEventPublisherIntegrationTest` (real repository query + wiring, not the
+  scheduler's timer).
+- **Concurrency** (the one TASK.md is actually testing for): `TransferIdempotencyTest` fires
+  genuinely concurrent requests via `ExecutorService` + latches for both races idempotency has to
+  survive — same key twice, and a retry of a `FAILED` key twice — and asserts exactly one
+  execution each time; log output confirms the threads actually collided, not just ran
+  sequentially and happened to pass.
+- Every backend change was also run live against real Postgres (`docker compose up -d postgres`
+  + `curl`) before being committed, not just against the H2 test suite — this is what caught two
+  real H2/Postgres divergences during development (`DECISION-LOG.md` #8, `PROMPTS.md`).
+
+29 tests across 8 classes as of the last backend commit; `npx nx run server:test` runs all of them.
 
 ## TODO
 
@@ -177,7 +223,56 @@ Roughly in the order I'd tackle them:
 
 ## Going to production
 
-*(what's needed for real customers / what a full sprint would add)*
+What's here is deliberately scoped to the assignment, not to real customers. Roughly in the
+order a real sprint would tackle it:
+
+**Security** — the biggest gap. `SecurityConfig` currently permits every request; there's no
+authentication at all. A real deployment needs at least: authenticated API access (OAuth2/JWT is
+the natural fit given Spring Security is already a dependency), secrets out of
+`application.properties` and into a real secrets manager (the DB password is a plaintext default
+right now), TLS termination, and input hardening beyond the current bean validation (e.g. request
+size limits, stricter currency/amount bounds tied to real business rules rather than "just not
+negative").
+
+**Reliability & observability** — the outbox publisher logs events instead of calling a real
+endpoint (`TransferNotifier`/`LoggingTransferNotifier`, server README §7) — swapping in a real
+webhook or message broker client is the concrete next step, and needs its own retry/dead-letter
+handling once it's a real network call. Beyond that: structured logging with correlation IDs
+across a request's idempotency-claim/FX-resolve/execute steps, metrics on the Resilience4j
+circuit breaker's state (open/half-open transitions should page someone, not just sit in logs),
+and the actuator health endpoint wired to real readiness/liveness checks rather than defaults.
+
+**Scale & concurrency** — optimistic locking on `Account.balance` degrades under sustained
+contention on one hot account (acknowledged in `DECISION-LOG.md` #3) — a production system with
+known hot accounts (e.g. a merchant settlement account) would need to revisit that, likely with
+pessimistic locking scoped to just those accounts. `GET /api/accounts` and `GET /api/transfers`
+return everything unpaginated (TODO below) — fine at this data volume, not at production volume.
+The outbox poller (`@Scheduled` on a single instance) would double-publish if the app ever runs
+with more than one replica — needs a leader-election or per-row locking scheme (e.g. `SELECT ...
+FOR UPDATE SKIP LOCKED`) before horizontal scaling.
+
+**Testing & CI** — there's no CI pipeline at all yet (build + test + security scan on every PR
+would be the first addition). The backend test suite deliberately runs against H2, not
+Testcontainers-backed Postgres (root README tech-stack table) — worth adding a smaller,
+Postgres-specific integration suite before production, since H2 already caught real divergences
+during development (`DECISION-LOG.md` #8) that a wider Testcontainers suite would catch even
+more of. Load/chaos testing the actual Resilience4j tuning (retry counts, circuit-breaker
+thresholds) against realistic traffic, rather than the arbitrary values currently set, would come
+before trusting them in production.
+
+**Data lifecycle** — Flyway migrations exist but there's no rollback/backward-compatibility
+discipline yet (e.g. expand/contract migrations for zero-downtime deploys), no backup/PITR
+strategy, and idempotency keys never expire (a `transfer` row lives forever) — a real system
+would need a retention/archival policy once volume makes that matter.
+
+**Deployment** — the backend runs directly via Gradle/Nx locally, not containerized (root README
+tech-stack table); a real deployment needs a container image, environment-based configuration
+injection (not the hardcoded defaults in `application.properties`), and a real orchestration
+target (Kubernetes, ECS, etc.) instead of a developer's machine plus `docker compose`.
+
+**Frontend** — doesn't exist yet at all; once it does, production readiness there means a real
+build/deploy pipeline, CDN-served static assets, and client-side error monitoring — none of which
+is relevant to discuss further until the three screens themselves exist.
 
 ## Running the app
 
