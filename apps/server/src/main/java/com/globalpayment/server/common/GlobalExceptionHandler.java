@@ -4,6 +4,7 @@ import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.transfer.IdempotencyConflictException;
 import com.globalpayment.server.transfer.InsufficientBalanceException;
 import com.globalpayment.server.transfer.InvalidTransferException;
+import com.globalpayment.server.transfer.TransferNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -16,8 +17,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(AccountNotFoundException.class)
-    public ResponseEntity<ApiError> handleAccountNotFound(AccountNotFoundException ex) {
+    @ExceptionHandler({AccountNotFoundException.class, TransferNotFoundException.class})
+    public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
     }

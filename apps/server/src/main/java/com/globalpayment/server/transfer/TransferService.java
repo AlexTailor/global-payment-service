@@ -4,6 +4,8 @@ import com.globalpayment.server.account.Account;
 import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
 import com.globalpayment.server.transfer.dto.TransferRequest;
+import java.util.List;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -17,10 +19,15 @@ import org.springframework.stereotype.Service;
 public class TransferService {
 
     private final AccountRepository accountRepository;
+    private final TransferRepository transferRepository;
     private final TransferPersistence transferPersistence;
 
-    public TransferService(AccountRepository accountRepository, TransferPersistence transferPersistence) {
+    public TransferService(
+            AccountRepository accountRepository,
+            TransferRepository transferRepository,
+            TransferPersistence transferPersistence) {
         this.accountRepository = accountRepository;
+        this.transferRepository = transferRepository;
         this.transferPersistence = transferPersistence;
     }
 
@@ -74,5 +81,17 @@ public class TransferService {
             transferPersistence.markFailed(owned.getId());
             throw failure;
         }
+    }
+
+    /** Every status is included (server README §3) — a FAILED row is a real, queryable attempt. */
+    public List<Transfer> listTransfers(UUID accountId) {
+        if (accountId == null) {
+            return transferRepository.findAll();
+        }
+        return transferRepository.findInvolvingAccount(accountId);
+    }
+
+    public Transfer getTransfer(UUID id) {
+        return transferRepository.findById(id).orElseThrow(() -> new TransferNotFoundException(id));
     }
 }
