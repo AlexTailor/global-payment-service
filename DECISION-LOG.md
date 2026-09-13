@@ -263,3 +263,39 @@ just believed to be correct.
 application code (Hibernate's UUID generator), not via a database default expression
 (`gen_random_uuid()` and equivalent). Sidesteps needing Postgres and H2 to agree on a UUID
 default function at all, rather than relying on both supporting the same one.
+
+---
+
+### 9. `account.created_at`: an ordering column, added after the fact
+
+**Context**: `GET /api/accounts` had no `ORDER BY`, so Postgres was free to return rows in
+whatever order its query planner picked — not necessarily insertion order, and not guaranteed
+stable across repeated queries with no data change at all. The frontend's `useSelectedAccount`
+falls back to "the first account in the list" whenever nothing is stored yet (`ARCHITECTURE.md`),
+so an unstable backend order meant the account a first-time user saw could change after some
+unrelated cache invalidation — observed live (Playwright against the real backend), not from a
+test.
+
+**Options**:
+- `ORDER BY id` — stable (UUIDs don't change), zero schema change, but the resulting order is
+  arbitrary (alphabetical-by-UUID), not meaningful
+- Add `created_at`, order by it — chosen
+
+**Decision**: `account` gets a `created_at timestamp with time zone` column
+(`V2__account_created_at.sql`), same shape and same "set once in the constructor via
+`Instant.now()`" pattern `transfer.created_at` already uses. `AccountService.listAccounts()`
+orders by it descending — newest account first.
+
+**Why**: `ORDER BY id` would have fixed the *symptom* (order flip-flopping between requests)
+without the result meaning anything — the most recently created account is a more natural
+default to land on (the frontend falls back to "the first account in the list" whenever nothing
+is stored yet) than whichever account happens to have the lexicographically smallest UUID.
+Matching `transfer`'s existing `created_at` pattern also means one mental model for "how do
+entities in this schema track when they were made," not two.
+
+**Migrating existing rows**: `alter table account add column created_at ... default
+current_timestamp` backfills every pre-existing row with the timestamp *the migration ran at* —
+they all get the same value, so their relative order among each other is still arbitrary (ties
+broken however Postgres breaks them). Not fixable after the fact; the data to reconstruct real
+historical creation order was never captured. Every account created from this migration forward
+gets a real, distinct `created_at`, which is what actually matters going forward.

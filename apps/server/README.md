@@ -85,10 +85,10 @@ transfer means the outbox table's only real job (make the event durable in the s
 the fact it describes) is just as well served by a nullable column on the row that commit
 already writes.
 
-**Implemented**: `src/main/resources/db/migration/V1__init.sql` (Flyway-managed — `ddl-auto` is
-`validate`, not `update`, in both `application.properties` and the test config, see §9). That
-file is the source of truth for the exact columns/indexes; two decisions worth calling out since
-they aren't obvious from reading it:
+**Implemented**: `src/main/resources/db/migration/V1__init.sql` and `V2__account_created_at.sql`
+(Flyway-managed — `ddl-auto` is `validate`, not `update`, in both `application.properties` and the
+test config, see §9). These files are the source of truth for the exact columns/indexes; a few
+decisions worth calling out since they aren't obvious from reading them:
 
 - **Primary keys are generated in application code** (Hibernate's UUID generator on the entity),
   not by a database default expression. Skips the question of whether Postgres's
@@ -101,6 +101,10 @@ they aren't obvious from reading it:
   with a syntax error even in `MODE=PostgreSQL` — H2 doesn't support filtered indexes. Replaced
   with a plain composite index on `(status, notified_at)`, which fits the publisher's actual query
   (§7) at least as well anyway.
+- **`account.created_at` (V2) exists purely so `GET /api/accounts` has a stable, meaningful
+  order** — it wasn't part of the original schema, added once an unordered `findAll()` was
+  observed returning accounts in a different order across requests with no data change at all.
+  See `DECISION-LOG.md` #9.
 
 Deliberately left out, with the reasoning for each in the root `README.md`'s "Key technical
 decisions" table: a `request_hash` column for detecting idempotency-key reuse with a
@@ -411,7 +415,7 @@ fields), an unparseable `currency` enum value, and a missing `X-Idempotency-Key`
   really about pessimistic `SELECT ... FOR UPDATE`, which isn't the path taken here. The test
   datasource (`src/test/resources/application.properties`) points H2 at
   `jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE` specifically so Flyway runs the
-  *actual* `V1__init.sql` here too, rather than tests exercising a schema Hibernate
+  *actual* migrations here too, rather than tests exercising a schema Hibernate
   auto-generated from the entities — the two could otherwise silently drift apart. This needed
   `org.springframework.boot:spring-boot-flyway` added explicitly (Spring Boot 4 split Flyway's
   autoconfiguration out of `spring-boot-autoconfigure` into its own module — `flyway-core` alone

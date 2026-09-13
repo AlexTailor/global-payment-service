@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -34,6 +35,9 @@ public class Account {
     @Version
     private Long version;
 
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
     protected Account() {
         // JPA
     }
@@ -42,6 +46,7 @@ public class Account {
         this.ownerName = ownerName;
         this.currency = currency;
         this.balance = balance;
+        this.createdAt = Instant.now();
     }
 
     public UUID getId() {
@@ -62,6 +67,10 @@ public class Account {
 
     public Long getVersion() {
         return version;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     public void debit(BigDecimal amount) {

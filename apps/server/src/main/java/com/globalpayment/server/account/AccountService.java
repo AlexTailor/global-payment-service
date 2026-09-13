@@ -3,6 +3,7 @@ package com.globalpayment.server.account;
 import com.globalpayment.server.account.dto.CreateAccountRequest;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -21,7 +22,7 @@ public class AccountService {
     }
 
     public List<Account> listAccounts() {
-        return accountRepository.findAll();
+        return accountRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     public Account getAccount(UUID id) {
