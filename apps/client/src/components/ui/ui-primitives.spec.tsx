@@ -10,6 +10,7 @@ import { SegmentedControl } from './segmented-control';
 import { Select } from './select';
 import { Skeleton } from './skeleton';
 import { StatusIcon } from './status-icon';
+import { Typography } from './typography';
 
 describe('UI primitives', () => {
   it('render without throwing', () => {
@@ -38,6 +39,12 @@ describe('UI primitives', () => {
           </Select.Content>
         </Select.Root>
         <Skeleton width={56} height={12} />
+        <Typography variant="body">Body</Typography>
+        <Typography variant="caption">Caption</Typography>
+        <Typography variant="label">Label</Typography>
+        <Typography variant="eyebrow">Eyebrow</Typography>
+        <Typography variant="mono">Mono</Typography>
+        <Typography variant="amount">Amount</Typography>
         <SegmentedControl.Root defaultValue="EUR">
           <SegmentedControl.Option value="EUR">EUR</SegmentedControl.Option>
           <SegmentedControl.Option value="USD">USD</SegmentedControl.Option>
