@@ -1,6 +1,7 @@
 import { Controller, type Control, type FieldPath, type FieldValues } from 'react-hook-form';
 
 import { Select } from '@/components/ui/select';
+import { Typography } from '@/components/ui/typography';
 
 interface SelectFieldOption {
   value: string;
@@ -44,9 +45,7 @@ export function SelectField<TFieldValues extends FieldValues>({
               ))}
             </Select.Content>
           </Select.Root>
-          {fieldState.error && (
-            <p className="text-[11.5px] text-failure-text">{fieldState.error.message}</p>
-          )}
+          {fieldState.error && <Typography variant="error">{fieldState.error.message}</Typography>}
         </div>
       )}
     />

@@ -1,6 +1,7 @@
 import { Controller, type Control, type FieldPath, type FieldValues } from 'react-hook-form';
 
 import { AmountInput } from '@/components/ui/amount-input';
+import { Typography } from '@/components/ui/typography';
 import type { Currency } from '@/types/api';
 
 interface AmountInputFieldProps<TFieldValues extends FieldValues> {
@@ -34,9 +35,9 @@ export function AmountInputField<TFieldValues extends FieldValues>({
             className={className}
           />
           {fieldState.error ? (
-            <p className="text-[11.5px] text-failure-text">{fieldState.error.message}</p>
+            <Typography variant="error">{fieldState.error.message}</Typography>
           ) : (
-            hint && <p className="text-[11px] text-neutral-600">{hint}</p>
+            hint && <Typography variant="caption">{hint}</Typography>
           )}
         </div>
       )}

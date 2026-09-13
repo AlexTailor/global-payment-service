@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Controller, type Control, type FieldPath, type FieldValues } from 'react-hook-form';
 
 import { Input } from '@/components/ui/input';
+import { Typography } from '@/components/ui/typography';
 
 interface InputFieldProps<TFieldValues extends FieldValues>
   extends Omit<React.ComponentProps<typeof Input>, 'name' | 'defaultValue'> {
@@ -21,9 +22,7 @@ export function InputField<TFieldValues extends FieldValues>({
       render={({ field, fieldState }) => (
         <div className="flex flex-col gap-1.5">
           <Input {...props} {...field} aria-invalid={!!fieldState.error} />
-          {fieldState.error && (
-            <p className="text-[11.5px] text-failure-text">{fieldState.error.message}</p>
-          )}
+          {fieldState.error && <Typography variant="error">{fieldState.error.message}</Typography>}
         </div>
       )}
     />

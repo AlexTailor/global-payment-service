@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/currency';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Typography } from '@/components/ui/typography';
 
 import type { Account } from '../types';
 
@@ -26,18 +27,16 @@ export function AccountSwitcherRow({ account, selected, switching, onSelect }: A
       )}
     >
       <span className="flex flex-col gap-0.5">
-        <span className="text-sm">{account.ownerName}</span>
-        <span className="text-[11px] uppercase tracking-[.06em] text-neutral-500">
-          {account.currency}
-        </span>
+        <Typography variant="body">{account.ownerName}</Typography>
+        <Typography variant="label">{account.currency}</Typography>
       </span>
       {switching && selected ? (
         <Skeleton width={56} height={12} />
       ) : (
         <span className="flex items-center gap-2">
-          <span className="text-[17px] font-medium tabular-nums md:text-[15px]">
+          <Typography variant="amount" className="text-[17px] font-medium md:text-[15px]">
             {formatCurrency(account.balance, account.currency)}
-          </span>
+          </Typography>
           {selected && <Check className="size-4 text-accent" aria-hidden />}
         </span>
       )}

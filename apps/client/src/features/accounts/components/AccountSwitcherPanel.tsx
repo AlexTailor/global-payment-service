@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
+import { Typography } from '@/components/ui/typography';
 
 import { useAccountSwitcher } from './AccountSwitcherContext';
 import { AccountSwitcherRow } from './AccountSwitcherRow';
@@ -18,10 +19,10 @@ export function AccountSwitcherPanel() {
     <Modal.Content>
       <Modal.Header className="flex-row items-center justify-between">
         <Modal.Title>Accounts</Modal.Title>
-        <span className="text-[11px] text-neutral-500">
+        <Typography variant="caption">
           {accounts.length} account{accounts.length === 1 ? '' : 's'} · {currencyCount} currenc
           {currencyCount === 1 ? 'y' : 'ies'}
-        </span>
+        </Typography>
       </Modal.Header>
       <Modal.Body>
         <div className="flex flex-col gap-2">

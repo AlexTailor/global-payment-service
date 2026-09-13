@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react';
 
 import { formatCurrency } from '@/lib/currency';
 import { Modal } from '@/components/ui/modal';
+import { Typography } from '@/components/ui/typography';
 
 import { useAccountSwitcher } from './AccountSwitcherContext';
 
@@ -23,12 +24,12 @@ export function AccountSwitcherTrigger() {
       }
     >
       <span className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
-        <span className="text-[11px] uppercase tracking-[.06em] text-neutral-500">
+        <Typography variant="label">
           {selectedAccount.ownerName} · {selectedAccount.currency}
-        </span>
-        <span className="text-[26px] font-medium tabular-nums md:text-sm">
+        </Typography>
+        <Typography variant="amount" className="text-[26px] font-medium md:text-sm">
           {formatCurrency(selectedAccount.balance, selectedAccount.currency)}
-        </span>
+        </Typography>
       </span>
       <ChevronDown className="size-4 shrink-0 text-accent" aria-hidden />
     </Modal.Trigger>
