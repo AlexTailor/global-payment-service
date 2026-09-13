@@ -112,6 +112,9 @@ row already has everything needed to re-serialize the original `201`).
 
 ## 3. API contract
 
+UML sequence diagrams for every endpoint below (plus a class diagram and component view):
+`API-FLOWS.md`.
+
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/accounts` | body: `{ ownerName, currency, initialBalance }` → 201 |
