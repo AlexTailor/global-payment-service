@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.globalpayment.server.account.Account;
 import com.globalpayment.server.account.AccountRepository;
 import com.globalpayment.server.common.Currency;
+import com.globalpayment.server.fx.ExchangeRateClient;
 import com.globalpayment.server.transfer.dto.TransferRequest;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -40,13 +41,18 @@ class TransferServiceRetryTest {
     @Mock
     private TransferPersistence transferPersistence;
 
+    @Mock
+    private ExchangeRateClient exchangeRateClient;
+
     private final UUID fromId = UUID.randomUUID();
     private final UUID toId = UUID.randomUUID();
     private final Account fromAccount = new Account("Payer", Currency.EUR, BigDecimal.valueOf(100));
     private final Account toAccount = new Account("Payee", Currency.EUR, BigDecimal.valueOf(0));
 
+    // Both accounts are EUR in every test here, so resolveRate() short-circuits without ever
+    // calling exchangeRateClient — the FX client's own behavior is covered separately.
     private TransferService newTransferService() {
-        return new TransferService(accountRepository, transferRepository, transferPersistence);
+        return new TransferService(accountRepository, transferRepository, transferPersistence, exchangeRateClient);
     }
 
     private void stubAccountLookups() {
@@ -64,7 +70,7 @@ class TransferServiceRetryTest {
                 key, fromId, toId, BigDecimal.TEN, Currency.EUR, Currency.EUR, null, TransferStatus.COMPLETED);
 
         when(transferPersistence.attemptClaim(any())).thenReturn(processing);
-        when(transferPersistence.executeAndComplete(any(), any(), any(), any()))
+        when(transferPersistence.executeAndComplete(any(), any(), any(), any(), any()))
                 .thenThrow(new ObjectOptimisticLockingFailureException(Account.class, fromId))
                 .thenReturn(completed);
 
@@ -72,7 +78,7 @@ class TransferServiceRetryTest {
                 .createTransfer(new TransferRequest(fromId, toId, BigDecimal.TEN, Currency.EUR), key);
 
         assertThat(result.getStatus()).isEqualTo(TransferStatus.COMPLETED);
-        verify(transferPersistence, times(2)).executeAndComplete(any(), any(), any(), any());
+        verify(transferPersistence, times(2)).executeAndComplete(any(), any(), any(), any(), any());
         verify(transferPersistence, times(0)).markFailed(any());
     }
 
@@ -84,14 +90,14 @@ class TransferServiceRetryTest {
                 key, fromId, toId, BigDecimal.TEN, Currency.EUR, Currency.EUR, null, TransferStatus.PROCESSING);
 
         when(transferPersistence.attemptClaim(any())).thenReturn(processing);
-        when(transferPersistence.executeAndComplete(any(), any(), any(), any()))
+        when(transferPersistence.executeAndComplete(any(), any(), any(), any(), any()))
                 .thenThrow(new ObjectOptimisticLockingFailureException(Account.class, fromId));
 
         assertThatThrownBy(() -> newTransferService()
                         .createTransfer(new TransferRequest(fromId, toId, BigDecimal.TEN, Currency.EUR), key))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
 
-        verify(transferPersistence, times(3)).executeAndComplete(any(), any(), any(), any());
+        verify(transferPersistence, times(3)).executeAndComplete(any(), any(), any(), any(), any());
         verify(transferPersistence, times(1)).markFailed(any());
     }
 }

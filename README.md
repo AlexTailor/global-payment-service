@@ -5,10 +5,10 @@ it. Built as an Nx monorepo (`apps/client` + `apps/server`) so both stacks share
 runner — see [Running the app](#running-the-app) for the current commands.
 
 **Status**: accounts and transfers are implemented end to end — full CRUD on both, idempotency
-(insert-first-then-branch, guarded `FAILED → PROCESSING` retry), and optimistic-lock retry on
-concurrent balance updates, all against the Flyway-managed schema. Only same-currency transfers
-are supported so far. FX/cross-currency, the outbox publisher, and the frontend don't exist yet
-— see [TODO](#todo) for what's next and why in that order.
+(insert-first-then-branch, guarded `FAILED → PROCESSING` retry), optimistic-lock retry on
+concurrent balance updates, and cross-currency transfers via a Resilience4j-wrapped mocked FX
+client, all against the Flyway-managed schema. The outbox publisher and the frontend don't exist
+yet — see [TODO](#todo) for what's next and why in that order.
 
 ## Tech stack
 
@@ -17,7 +17,7 @@ are supported so far. FX/cross-currency, the outbox publisher, and the frontend 
 | Backend language/framework | Java 21, Spring Boot 4.x | Mandated by the assignment |
 | Backend build | Gradle, wired into the Nx project graph via `@nx/gradle` | One task runner for both apps — every Gradle task shows up as an Nx target automatically, no hand-written config |
 | Database | Postgres (Docker Compose), Flyway migrations | Real locking semantics for the concurrency requirements — H2 would mask them |
-| Backend resilience | Resilience4j (retry, circuit breaker, time limiter) — planned | Standard Spring-ecosystem fit for the flaky FX dependency |
+| Backend resilience | Resilience4j (retry, circuit breaker, time limiter) | Standard Spring-ecosystem fit for the flaky FX dependency |
 | Frontend | React + TypeScript, Vite | Mandated language/framework; Vite over Next.js since there's no SSR/routing-server need for a 3-screen SPA, and Nx already provides the monorepo tooling a meta-framework would otherwise bring |
 | Frontend data layer | TanStack Query | Server-state caching, retry, and mutation state (loading/error) for free on the transfer flow |
 | Frontend UI | shadcn/ui on Base UI + Tailwind CSS v4 | Fast to build a clean 3-screen app without hand-rolling components; shadcn components are copied into `src/components/ui` as source, so they're fully ours to restyle |
@@ -70,14 +70,17 @@ interleave (they usually just serialize cleanly), so the retry loop itself is ve
 deterministically with a mocked persistence layer (`TransferServiceRetryTest`) rather than hoped
 for from a race.
 
-**Currency conversion / FX resilience** — the FX client will be wrapped with Resilience4j retry +
+**Currency conversion / FX resilience** — the FX client is wrapped with Resilience4j retry +
 circuit breaker + time limiter rather than called directly; a failed lookup after retries returns
 `503` and flips the already-created `Transfer` row to `FAILED` in place (it persists and stays
 queryable via `GET /api/transfers`), so a retry with the same key reuses that row instead of
 replaying a stored failure. This only holds because FX resolution always happens before any
 debit/credit — see `DECISION-LOG.md` #4 for the full failure-response reasoning (per-failure-type
-status codes, the no-partial-application invariant). *(Not yet implemented — Resilience4j isn't in
-`build.gradle` yet.)*
+status codes, the no-partial-application invariant). The client interface is async
+(`CompletableFuture<BigDecimal>`) specifically so `@TimeLimiter` can enforce a real timeout —
+it only applies to async-returning methods; `TransferService` blocks on `.get()`. Verified live
+against real Postgres: a EUR→HUF transfer resolves the mocked rate and credits the converted
+amount correctly.
 
 **Propagating completed transfers (Fraud Detection / Notification Center)** — transactional
 outbox, implemented as a nullable `notified_at` column on `transfer` rather than a separate
@@ -152,7 +155,11 @@ Roughly in the order I'd tackle them:
 4. ~~Optimistic-locking retry on `Account` balance updates~~ — done: bounded retry (3 attempts)
    in `TransferService`, deterministically tested via a mocked `TransferPersistence`
    (`TransferServiceRetryTest`) since real-thread races don't reliably force the interleaving.
-5. Mocked FX API + Resilience4j wrapping (retry/circuit breaker/time limiter).
+5. ~~Mocked FX API + Resilience4j wrapping~~ — done: async `ExchangeRateClient`
+   (`CompletableFuture<BigDecimal>`, needed for `@TimeLimiter` to apply at all) wrapping an
+   in-process mock with `@Retry`/`@CircuitBreaker`/`@TimeLimiter`; cross-currency transfers now
+   supported. Deterministic tests mock `ExchangeRateClient` itself (`TransferFxTest`) rather than
+   relying on the real mock's randomness.
 6. Outbox publisher (`transfer.notified_at` polling) for Fraud Detection / Notification Center.
 7. The three frontend screens (Accounts, Transfer, Transactions) against the above.
 8. Real message broker (Kafka/RabbitMQ) instead of the outbox + webhook stand-in.

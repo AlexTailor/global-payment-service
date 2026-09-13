@@ -1,6 +1,7 @@
 package com.globalpayment.server.common;
 
 import com.globalpayment.server.account.AccountNotFoundException;
+import com.globalpayment.server.fx.ExchangeRateUnavailableException;
 import com.globalpayment.server.transfer.IdempotencyConflictException;
 import com.globalpayment.server.transfer.InsufficientBalanceException;
 import com.globalpayment.server.transfer.InvalidTransferException;
@@ -41,6 +42,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleOptimisticLockConflict(ObjectOptimisticLockingFailureException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), "Too much concurrent activity on one of the accounts; please retry"));
+    }
+
+    @ExceptionHandler(ExchangeRateUnavailableException.class)
+    public ResponseEntity<ApiError> handleExchangeRateUnavailable(ExchangeRateUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(InvalidTransferException.class)

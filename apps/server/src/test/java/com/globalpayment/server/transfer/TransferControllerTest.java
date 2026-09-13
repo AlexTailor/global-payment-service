@@ -112,14 +112,8 @@ class TransferControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    @Test
-    void rejectsCrossCurrencyTransfersForNow() throws Exception {
-        Account from = accountRepository.save(new Account("Payer", Currency.EUR, BigDecimal.valueOf(100)));
-        Account to = accountRepository.save(new Account("Payee", Currency.USD, BigDecimal.valueOf(10)));
-
-        mockMvc.perform(transferRequest(from.getId(), to.getId(), "10", Currency.EUR))
-                .andExpect(status().isBadRequest());
-    }
+    // Cross-currency transfers are now supported (see TransferFxTest, which mocks
+    // ExchangeRateClient for deterministic assertions rather than the real randomized one).
 
     @Test
     void rejectsTransferringToTheSameAccount() throws Exception {

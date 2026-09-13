@@ -3,17 +3,21 @@ package com.globalpayment.server.transfer;
 import com.globalpayment.server.account.Account;
 import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
+import com.globalpayment.server.common.Currency;
+import com.globalpayment.server.fx.ExchangeRateClient;
+import com.globalpayment.server.fx.ExchangeRateUnavailableException;
 import com.globalpayment.server.transfer.dto.TransferRequest;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 /**
  * Deliberately not {@code @Transactional} — this is a plain orchestrator over
- * {@link TransferPersistence}'s three separately-transactional steps (server README §4). FX/
- * cross-currency transfers aren't implemented yet (root README TODO).
+ * {@link TransferPersistence}'s three separately-transactional steps (server README §4).
  */
 @Service
 public class TransferService {
@@ -26,14 +30,17 @@ public class TransferService {
     private final AccountRepository accountRepository;
     private final TransferRepository transferRepository;
     private final TransferPersistence transferPersistence;
+    private final ExchangeRateClient exchangeRateClient;
 
     public TransferService(
             AccountRepository accountRepository,
             TransferRepository transferRepository,
-            TransferPersistence transferPersistence) {
+            TransferPersistence transferPersistence,
+            ExchangeRateClient exchangeRateClient) {
         this.accountRepository = accountRepository;
         this.transferRepository = transferRepository;
         this.transferPersistence = transferPersistence;
+        this.exchangeRateClient = exchangeRateClient;
     }
 
     public Transfer createTransfer(TransferRequest request, String idempotencyKey) {
@@ -51,11 +58,6 @@ public class TransferService {
         if (request.currency() != fromAccount.getCurrency()) {
             throw new InvalidTransferException(
                     "currency must match the source account's currency (" + fromAccount.getCurrency() + ")");
-        }
-        if (fromAccount.getCurrency() != toAccount.getCurrency()) {
-            // FX resolution isn't implemented yet (root README TODO) — only same-currency
-            // transfers are supported until it lands.
-            throw new InvalidTransferException("cross-currency transfers are not yet supported");
         }
 
         Transfer candidate = new Transfer(
@@ -80,10 +82,32 @@ public class TransferService {
         }
 
         try {
-            return executeWithOptimisticLockRetry(owned);
+            // Resolved once per attempt, outside the optimistic-lock retry loop below (server
+            // README §4/§6) — a lock-conflict retry reuses this same rate, it never calls the FX
+            // client again.
+            BigDecimal rate = resolveRate(fromAccount.getCurrency(), toAccount.getCurrency());
+            return executeWithOptimisticLockRetry(owned, rate);
         } catch (RuntimeException failure) {
             transferPersistence.markFailed(owned.getId());
             throw failure;
+        }
+    }
+
+    /** {@code null} for a same-currency transfer — nothing to resolve, credit the same amount. */
+    private BigDecimal resolveRate(Currency from, Currency to) {
+        if (from == to) {
+            return null;
+        }
+        try {
+            return exchangeRateClient.getRate(from, to).get();
+        } catch (ExecutionException executionFailure) {
+            if (executionFailure.getCause() instanceof RuntimeException runtimeCause) {
+                throw runtimeCause;
+            }
+            throw new ExchangeRateUnavailableException(from, to, executionFailure.getCause());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new ExchangeRateUnavailableException(from, to, interrupted);
         }
     }
 
@@ -94,11 +118,11 @@ public class TransferService {
      * fresh, so both the account reads and the balance check are never stale. Any other exception
      * (e.g. insufficient balance) propagates immediately — retrying wouldn't change the outcome.
      */
-    private Transfer executeWithOptimisticLockRetry(Transfer owned) {
+    private Transfer executeWithOptimisticLockRetry(Transfer owned, BigDecimal rate) {
         for (int attempt = 1; ; attempt++) {
             try {
                 return transferPersistence.executeAndComplete(
-                        owned.getId(), owned.getFromAccountId(), owned.getToAccountId(), owned.getAmount());
+                        owned.getId(), owned.getFromAccountId(), owned.getToAccountId(), owned.getAmount(), rate);
             } catch (ObjectOptimisticLockingFailureException conflict) {
                 if (attempt >= MAX_OPTIMISTIC_LOCK_ATTEMPTS) {
                     throw conflict;

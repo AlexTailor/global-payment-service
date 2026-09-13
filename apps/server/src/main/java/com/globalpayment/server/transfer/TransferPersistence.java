@@ -4,6 +4,7 @@ import com.globalpayment.server.account.Account;
 import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -73,10 +74,13 @@ public class TransferPersistence {
      * Re-reads both accounts fresh (never the caller's earlier references) so the balance check
      * is never stale, debits/credits them, and marks the transfer COMPLETED — all one transaction,
      * so a failure here (e.g. insufficient balance) rolls back the balance change too and never
-     * touches the transfer row at all.
+     * touches the transfer row at all. {@code rate} is {@code null} for a same-currency transfer
+     * (credit the same amount) or the already-resolved-once rate otherwise (server README §4/§6)
+     * — this method never calls the FX client itself.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Transfer executeAndComplete(UUID transferId, UUID fromAccountId, UUID toAccountId, BigDecimal amount) {
+    public Transfer executeAndComplete(
+            UUID transferId, UUID fromAccountId, UUID toAccountId, BigDecimal amount, BigDecimal rate) {
         Account fromAccount =
                 accountRepository.findById(fromAccountId).orElseThrow(() -> new AccountNotFoundException(fromAccountId));
         Account toAccount =
@@ -86,11 +90,14 @@ public class TransferPersistence {
             throw new InsufficientBalanceException(fromAccount.getId());
         }
 
+        BigDecimal creditedAmount =
+                rate == null ? amount : amount.multiply(rate).setScale(4, RoundingMode.HALF_UP);
+
         fromAccount.debit(amount);
-        toAccount.credit(amount);
+        toAccount.credit(creditedAmount);
 
         Transfer transfer = transferRepository.findById(transferId).orElseThrow();
-        transfer.markCompleted();
+        transfer.markCompleted(rate);
         return transfer;
     }
 

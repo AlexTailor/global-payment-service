@@ -112,6 +112,17 @@ mutation, and the debit + credit + `COMPLETED` update are one atomic transaction
 at `FAILED` always means zero balance movement, which is what makes reusing it on retry safe
 rather than a double-charge risk.
 
+**Implementation note — async interface**: `ExchangeRateClient.getRate` returns
+`CompletableFuture<BigDecimal>`, not a plain `BigDecimal`. Resilience4j's `@TimeLimiter` — the
+mechanism actually enforcing the "latency" half of the flakiness requirement — only applies to
+methods returning an async type; a synchronous method can't be time-limited by it at all.
+`TransferService` blocks on `.get()`, which is standard practice for a synchronous caller wanting
+a hard timeout around a declared-async operation. The alternative (drop `@TimeLimiter`, keep the
+interface synchronous) was considered and rejected: the mock's simulated latency is self-bounded
+so nothing can truly hang, but that's an argument for why a timeout is *safe* to skip, not why
+the delay-handling requirement is actually met — TASK.md names delays specifically, and having a
+real timeout guard is a stronger answer than explaining around its absence.
+
 ---
 
 ### 5. Propagating completed transfers: transactional outbox, not a direct call

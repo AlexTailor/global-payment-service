@@ -152,8 +152,8 @@ on POST /api/transfers:
   // @CircuitBreaker/@TimeLimiter around getRate() (§6) already owns FX-flakiness retries —
   // nothing past this point calls the FX client again for this attempt
   try:
-      rate = (source_currency == target_currency) ? 1
-             : exchangeRateClient.getRate(source_currency, target_currency)
+      rate = (source_currency == target_currency) ? null   // null if same currency, see §2
+             : exchangeRateClient.getRate(source_currency, target_currency).get()
   catch ExchangeRateUnavailableException:
       update this row set status='FAILED'
       rethrow / map to 503
@@ -252,16 +252,23 @@ account at once (e.g. two different transfers both debiting account A).
 
 ## 6. FX rate client — resilience
 
+**Implemented.**
+
 ```java
 public interface ExchangeRateClient {
-    BigDecimal getRate(String from, String to);
+    CompletableFuture<BigDecimal> getRate(Currency from, Currency to);
 }
 ```
 
-`getRate(from, to)` returns units of `to` per 1 unit of `from` — e.g. `getRate("USD", "EUR")` ≈
-`0.92`, so `amount_usd × rate = amount_eur`. That's the direction §4's `credit toAccount by
-amount * rate` assumes; get this backwards and every cross-currency transfer silently credits
-the wrong amount.
+`getRate(from, to)` returns units of `to` per 1 unit of `from` — e.g. `getRate(USD, EUR)` ≈
+`0.92`, so `amount_usd × rate = amount_eur`. `Currency`, not `String` (a small refinement over
+the original sketch): the domain already has that enum everywhere else, so using it here avoids
+ad-hoc string conversions at every call site for no benefit. Async, not a plain synchronous
+`BigDecimal` return: Resilience4j's `@TimeLimiter` — the piece that actually enforces the
+"delays" half of the flakiness requirement — only applies to `CompletableFuture`-returning
+methods. `TransferService` calls `.get()` on the result, blocking the servlet thread until it
+resolves or the TimeLimiter/circuit-breaker/retry chain gives up — standard practice for a
+synchronous caller wanting a hard timeout around what's declared as an async operation.
 
 **Decided: the flaky external API is simulated in-process, not a real separate service.**
 `MockExchangeRateClient` computes a rate and, before returning it, randomly throws
@@ -269,34 +276,37 @@ the wrong amount.
 latency), at rates tuned to actually exercise the retry/circuit-breaker/timeout below — no real
 HTTP call, no WireMock/stub server, nothing added to `docker-compose.yml`. The client code
 reacting to a thrown exception behaves identically whether that exception came from a socket or
-from `Math.random()`, so this gets the same resilience-testing value TASK.md is after for a
+from `ThreadLocalRandom`, so this gets the same resilience-testing value TASK.md is after for a
 fraction of the scope: no second process to build, start, keep alive, or wire into Docker
 Compose for local runs and tests alike.
 
-Implementation wraps the flaky mock with Resilience4j:
+Implementation wraps the flaky mock with Resilience4j (`io.github.resilience4j:resilience4j-spring-boot4`
+— Spring Boot 4 needs the version-specific artifact, not `resilience4j-spring-boot3`):
 
-```yaml
-resilience4j.retry.instances.fx:
-  max-attempts: 3
-  wait-duration: 200ms
-  retry-exceptions: [com.globalpayment.server.fx.TransientFxFailureException]
+```properties
+resilience4j.retry.instances.fx.max-attempts=3
+resilience4j.retry.instances.fx.wait-duration=200ms
+resilience4j.retry.instances.fx.retry-exceptions=com.globalpayment.server.fx.TransientFxFailureException
 
-resilience4j.circuitbreaker.instances.fx:
-  sliding-window-size: 10
-  failure-rate-threshold: 50
-  wait-duration-in-open-state: 5s
+resilience4j.circuitbreaker.instances.fx.sliding-window-size=10
+resilience4j.circuitbreaker.instances.fx.failure-rate-threshold=50
+resilience4j.circuitbreaker.instances.fx.wait-duration-in-open-state=5s
 
-resilience4j.timelimiter.instances.fx:
-  timeout-duration: 2s
+resilience4j.timelimiter.instances.fx.timeout-duration=2s
 ```
 
-Annotate the adapter method with `@Retry`, `@CircuitBreaker`, `@TimeLimiter` (name = `"fx"`),
-and define a `@Bean` fallback: return a short-lived cached last-known rate if you have one, or
-raise `ExchangeRateUnavailableException` mapped to `503` if you don't. **Decided**: a failed
-FX lookup marks the already-`PROCESSING` `Transfer` row `FAILED` (§4) rather than leaving it
-half-applied — the row persists, is retryable via the same idempotency key (with the guard
-from §4), and stays visible in `GET /api/transfers` (§3). This only holds because the FX call
-happens *before* any debit/credit — never resolve the rate after money has started moving.
+`@Retry`, `@CircuitBreaker` (with `fallbackMethod`), `@TimeLimiter` (name = `"fx"`) annotate the
+adapter method; the fallback has no cached rate to fall back to, so it fails closed — completes
+the returned future exceptionally with `ExchangeRateUnavailableException`, mapped to `503`.
+**Decided**: a failed FX lookup marks the already-`PROCESSING` `Transfer` row `FAILED` (§4)
+rather than leaving it half-applied — the row persists, is retryable via the same idempotency
+key (with the guard from §4), and stays visible in `GET /api/transfers` (§3). This only holds
+because the FX call happens *before* any debit/credit — never resolve the rate after money has
+started moving.
+
+Note for `src/test/resources/application.properties`: it fully shadows (not merges with) the
+main one, so the `resilience4j.*` properties are duplicated there too — otherwise tests would
+run against Resilience4j's un-tuned defaults instead of the config above.
 
 **`getRate()` is called exactly once per transfer attempt.** This annotated method is the only
 retry mechanism that should ever touch it — Resilience4j owns FX-flakiness handling completely.

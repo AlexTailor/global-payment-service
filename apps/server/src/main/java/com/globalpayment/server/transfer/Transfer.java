@@ -122,7 +122,8 @@ public class Transfer {
         return createdAt;
     }
 
-    public void markCompleted() {
+    public void markCompleted(BigDecimal exchangeRate) {
+        this.exchangeRate = exchangeRate;
         this.status = TransferStatus.COMPLETED;
     }
 
