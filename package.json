@@ -24,6 +24,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "babel-jest": "~30.3.0",
+    "babel-plugin-transform-vite-meta-env": "^1.0.3",
     "jest": "~30.3.0",
     "jest-environment-jsdom": "~30.3.0",
     "jest-util": "~30.3.0",
