@@ -1,5 +1,5 @@
 {
-  "name": "@global-payment-service/client",
+  "name": "client",
   "version": "0.0.1",
   "private": true,
   "dependencies": {
