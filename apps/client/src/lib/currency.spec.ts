@@ -1,4 +1,4 @@
-import { formatCurrency } from './currency';
+import { formatCurrency, getCurrencySymbol } from './currency';
 
 describe('formatCurrency', () => {
   it('formats EUR with a prefixed symbol, 2 decimals, comma thousands', () => {
@@ -11,5 +11,13 @@ describe('formatCurrency', () => {
 
   it('formats HUF with a suffixed symbol, 0 decimals, space thousands', () => {
     expect(formatCurrency(1620000, 'HUF')).toBe('1 620 000 Ft');
+  });
+});
+
+describe('getCurrencySymbol', () => {
+  it('returns the bare symbol for each currency', () => {
+    expect(getCurrencySymbol('EUR')).toBe('€');
+    expect(getCurrencySymbol('USD')).toBe('$');
+    expect(getCurrencySymbol('HUF')).toBe('Ft');
   });
 });

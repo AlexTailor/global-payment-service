@@ -1,11 +1,13 @@
 import { render } from '@testing-library/react';
 
+import { AmountInput } from './amount-input';
 import { Badge } from './badge';
 import { Button } from './button';
 import { Card } from './card';
 import { Input } from './input';
 import { Modal } from './modal';
 import { SegmentedControl } from './segmented-control';
+import { Select } from './select';
 import { Skeleton } from './skeleton';
 import { StatusIcon } from './status-icon';
 
@@ -25,6 +27,16 @@ describe('UI primitives', () => {
         <StatusIcon status="FAILED" direction="out" />
         <Card.Root>Card content</Card.Root>
         <Input placeholder="Amount" />
+        <AmountInput currency="EUR" defaultValue="250" />
+        <Select.Root>
+          <Select.Trigger>
+            <Select.Value placeholder="Select an account" />
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value="a">Account A</Select.Item>
+            <Select.Item value="b">Account B</Select.Item>
+          </Select.Content>
+        </Select.Root>
         <Skeleton width={56} height={12} />
         <SegmentedControl.Root defaultValue="EUR">
           <SegmentedControl.Option value="EUR">EUR</SegmentedControl.Option>
