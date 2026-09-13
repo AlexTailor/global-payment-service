@@ -96,6 +96,14 @@ workflow that emerged and then held for the rest of the build:
    idempotency transaction-boundary structure). For pure implementation-mechanics calls with no
    real trade-off, Claude decided and explained the reasoning afterward instead of stopping to
    ask.
+5. **One feature per stop, verified live, reviewed before committing.** This shifted again once
+   actual frontend component code started (as opposed to the architecture-doc revisions above):
+   build one feature slice — a compound component, a page-level integration — verify it
+   (typecheck, build, tests, and, new for this phase, an actual headless-browser run against the
+   live backend, not just mocks), then stop for review before committing rather than committing
+   automatically. The live-browser step wasn't requested; it was added on the reasoning that a
+   multi-feature integration point is exactly where mocked unit tests stop being sufficient
+   evidence — and it caught two real bugs unit tests never could have (see below).
 
 Representative prompts and what happened to their output:
 
@@ -190,6 +198,106 @@ composition-patterns warns against. It isn't — the branch reads already-resolv
 (`state.error.status`) off context, not a caller-supplied flag — but the distinction is easy to
 miss, so `ARCHITECTURE.md` spells it out explicitly rather than leaving it implicit.
 
+**Prompt**: "Clean the react app from the unnecessary basic stuff and after start to build the ui
+component lib."
+**Produced**: removed the Nx-generated welcome page and `react-router-dom` wiring (this app has
+no router — every "screen" is a modal over one shell, per `ARCHITECTURE.md`), then the primitives
+catalog from that doc: `Button`, `Input`, `Badge`, `Card`, `Modal`, `Skeleton`, `StatusIcon`,
+`SegmentedControl`, each with a Storybook story.
+**Outcome**: *accepted*, with one pre-existing environment problem fixed rather than routed
+around: `tsconfig.app.json`'s `baseUrl` deprecation (TS5101) had been silently escalating to a
+hard error since the initial scaffold commit, blocking `nx typecheck` for the whole project — it
+just happened that nothing had relied on `nx typecheck` actually passing until now. Fixed with
+TypeScript's own suggested `ignoreDeprecations` flag rather than removing `baseUrl` and
+restructuring path resolution. Separately, jsdom has no `matchMedia` at all, which `useMediaQuery`
+(and anything built on it, like `Modal`'s bottom-sheet/dialog swap) needs to run under Jest —
+polyfilled in `test-setup.ts`.
+
+**Prompt**: "Create all the necessary input fields in the ui component folder and after that
+create a react-hook-form compatible version for them separately."
+**Produced**: `Select` and `AmountInput` added to `components/ui/` (framework-agnostic, no
+`react-hook-form` import anywhere in that folder), then `InputField`/`AmountInputField`/
+`SelectField`/`SegmentedControlField` in a separate `components/form/`, each wrapping its
+primitive in a `Controller`.
+**Outcome**: *accepted*, after one library incompatibility was reproduced and confirmed before
+working around it rather than assumed: Base UI's `Select` popup hangs indefinitely under jsdom —
+confirmed by reproducing the exact same hang with the raw `@base-ui/react/select` primitives
+directly, no wrapper of this codebase's own involved, before concluding it wasn't something to
+fix here. `TransferFlow.spec.tsx` stubs `SelectField` with a plain native `<select>` for testing
+purposes only; the real component used in the actual app is unaffected. Separately, `z.coerce
+.number()` doesn't type-check cleanly against `zodResolver` + `useForm`'s generics in this zod/
+resolvers version pairing (an input/output type mismatch) — worked around by keeping the amount
+field a validated string and converting with `Number()` at submit time, which turned out simpler
+than fighting the generics anyway.
+
+**Prompt**: "Can you create a typography and use it instead of spans and inline text classes."
+**Produced**: a `Typography` primitive (`body`/`caption`/`label`/`eyebrow`/`mono`/`amount`/`error`
+variants), then applied across `TransactionRow`, `TransactionTable`, `AccountSwitcher*`, and the
+three form field wrappers' error/hint text.
+**Outcome**: *accepted*. The `error` variant wasn't speculative — it came directly out of noticing
+the exact same `text-[11.5px] text-failure-text` string already hand-copied across three separate
+field wrappers before this prompt. The primitive replaced duplication that already existed rather
+than pre-empting duplication that might happen later.
+
+**Prompt**: "Is everything ready to start implement the app or do I need to specify something?"
+**Produced**: an audit of what was still missing before feature work could safely start — no
+CORS or dev-proxy wiring existed yet between the client and the live backend, so nothing had
+actually made a real network call up to this point.
+**Outcome**: a choice was asked, not assumed — Vite dev-server proxy vs. CORS on the Spring Boot
+side, since both are legitimate and the codebase gave no signal either way. The user picked CORS.
+Verified live rather than trusting the config: preflight and real requests from the Vite origin
+come back with `Access-Control-Allow-Origin`; a request from an untrusted origin gets none.
+
+**Prompt**: "Go" (building `TransferFlow`, then `PageShell`).
+**Produced**: the compound `TransferFlow` (`Provider` + `Form`/`Pending`/`Success`/`Failed`), then
+`PageShell` wiring `AccountSwitcher`, the transaction list/table, and `TransferFlow` into the
+actual running app for the first time.
+**Outcome**: *accepted*, but only after live verification (see workflow point 5 above) caught two
+things a mocked unit test structurally could not:
+1. Selecting an account never closed the switcher panel. Its open state lives outside
+   `AccountSwitcherContext` on purpose (owned by whoever renders `Modal.Root`, per the
+   state-ownership table in `ARCHITECTURE.md`), so nothing told it to close — every unit test had
+   rendered the panel pre-opened via `defaultOpen` and never actually exercised a real
+   open-select-close cycle. Found by clicking through the running app in a real browser against
+   the live backend. Fixed by wrapping the row in `Modal.Close`, which merges its dismiss
+   behavior with the row's own `onSelect` handler.
+2. Wiring `PageShell` pushed the main JS bundle to 596kB with the `TransferModal` async chunk
+   almost empty (0.33kB) — `features/transfers/index.ts` had been re-exporting `TransferFlow` from
+   the same barrel `PageShell` statically imports `TransactionList`/`TransactionTable` from,
+   which defeated Rollup's code-splitting even though the `React.lazy()` call itself was correct.
+   Found by reading the actual build output sizes, not by assuming a `lazy()` call is sufficient
+   on its own. Fixed by removing that export — nothing outside the feature needs `TransferFlow`
+   directly, only the already-lazy `TransferModal` wrapper, which imports it by relative path.
+
+Two backend data gaps were disclosed rather than papered over with invented data: `Transfer` has
+no reference field (the transfer's own id, truncated, stands in — the mockup's example format
+happens to look exactly like a truncated UUID), and no failure reason is persisted for a `FAILED`
+transfer (a generic "Transfer failed" line is shown instead of fabricating a cause the backend
+never recorded).
+
+**Prompt**: "Check for unexpected side effects and SOLID and DRY principle lacks."
+**Produced**: a full pass over the client codebase — confirmed zero `useEffect` calls anywhere
+(state is consistently derived during render, matching `ARCHITECTURE.md`'s stated intent, not a
+coincidence), then a list of concrete DRY duplications (the field-wrapper markup repeated three
+times, `TransferFlowSuccess`'s four detail rows, three variants of the same outlined-icon-circle
+pattern across `Success`/`Failed`, `PageShell`'s header duplicated between its two branches) and
+one real bug: `TransferFlowForm` bypassed `AmountInputField`'s own `hint` prop and re-implemented
+the wrapper manually, which meant an error message and the hint text could render simultaneously
+when the primitive's own logic treats them as mutually exclusive.
+**Outcome**: findings reported, not yet applied as of this writing — the prompt asked to *check*,
+not to fix, so nothing was changed pending a decision on which findings to act on.
+
+**Prompt**: "The main user base is hungarian so rewrite the CTA's and the contents to hungarian
+where is it possible."
+**Produced**: every frontend-authored string translated — headers, buttons, validation messages,
+empty states, badges, the screen-reader-only "Close" label on the generic `Modal`/`Dialog`
+primitives — while deliberately leaving the brand name, the ISO currency codes, the already-locked
+`€4,182.60`-style number-formatting spec, and `error.message` (verbatim from the Java backend's
+exceptions, per the standing "show server messages as-is" decision) untouched.
+**Outcome**: *accepted*. Verified live in a real browser at the narrowest supported width
+specifically because Hungarian strings run noticeably longer than their English source — confirmed
+no overflow anywhere, including a hint string in `TransferFlowForm` that wraps to two lines.
+
 ---
 
 ## Discarded suggestions
@@ -216,6 +324,12 @@ During implementation, a few concrete alternatives were surfaced and not taken:
 - **Layer-based frontend folders** (`components/`, `hooks/`, `api/` each holding every feature's
   files, grouped by filename rather than by folder) — a real option offered for the client
   architecture; feature-sliced was chosen instead as the closer match to the stated convention.
+- **A full i18n library (`react-intl`/`i18next`) for the Hungarian localization.** Would make
+  sense if the app needed to serve more than one language, but the actual ask was "the user base
+  is Hungarian" — one target language, not a language switcher. Adding a translation-key
+  abstraction layer for a second language nothing has asked for would be exactly the kind of
+  unrequested infrastructure this project's own conventions argue against; strings were rewritten
+  in place instead.
 
 ---
 
@@ -246,11 +360,25 @@ During implementation, a few concrete alternatives were surfaced and not taken:
     (render/state-update hygiene, code-splitting) directly shaped `apps/client/ARCHITECTURE.md` —
     e.g. `TransferFlow`/`AccountSwitcher` as compound components with a provider owning the state
     interface, and the versioned/try-caught `localStorage` schema for the selected-account id.
-    `vercel-react-view-transitions` was loaded but not yet applied to anything (no components
-    exist to animate yet). The vendored skill content itself (`.agents/`, `.claude/skills/*`
-    symlinks) is gitignored — fetched by `/reload-skills`, not authored — but `skills-lock.json`
-    (which skills, which versions) is committed, the same reasoning as a lockfile for any other
-    dependency.
+    `vercel-react-view-transitions` was loaded early but never actually applied — true at the
+    time it was written (no component code existed yet) and still true now that it does; it was
+    simply never revisited once the component library and features were actually built. Not
+    treated as a checklist item to force through regardless of fit. The vendored skill content
+    itself (`.agents/`, `.claude/skills/*` symlinks) is gitignored — fetched by `/reload-skills`,
+    not authored — but `skills-lock.json` (which skills, which versions) is committed, the same
+    reasoning as a lockfile for any other dependency.
+  - **Storybook** (`@nx/storybook`, `@storybook/react-vite`), added once the UI primitives catalog
+    existed — every primitive in `components/ui/` got a story covering its documented variants, so
+    the library is visually reviewable without wiring up the whole app.
+  - **`react-use`**, swapped in for `useMediaQuery`'s implementation partway through (a user edit,
+    not an AI suggestion) — moved from the root `package.json` to `apps/client/package.json`,
+    since it's a client-only dependency and every other client runtime dependency already lived
+    there.
+  - **Playwright**, used ad hoc for the live-browser verification described in workflow point 5 —
+    installed to a scratch directory and torn down after each use, not part of the committed
+    toolchain. This is what actually caught the two `PageShell` bugs above and confirmed the
+    Hungarian localization didn't overflow anywhere; a genuine case of a tool built for exactly
+    one verification need rather than assumed to already be unnecessary because unit tests existed.
 
 Left in the repo per the assignment's own instruction that AI-workflow config is a signal, not
 noise.
