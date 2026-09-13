@@ -12,11 +12,14 @@ import { Typography } from '@/components/ui/typography';
 import { useTransferFlow } from './TransferFlowContext';
 
 const schema = z.object({
-  toAccountId: z.string().min(1, 'Pick a destination account.'),
+  toAccountId: z.string().min(1, 'Válassz célszámlát.'),
   amount: z
     .string()
-    .min(1, 'Amount must be greater than 0.')
-    .refine((value) => !Number.isNaN(Number(value)) && Number(value) > 0, 'Amount must be greater than 0.'),
+    .min(1, 'Az összegnek nullánál nagyobbnak kell lennie.')
+    .refine(
+      (value) => !Number.isNaN(Number(value)) && Number(value) > 0,
+      'Az összegnek nullánál nagyobbnak kell lennie.',
+    ),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -52,15 +55,15 @@ export function TransferFlowForm() {
   const numericAmount = Number(amount);
   const sendLabel =
     amount && !Number.isNaN(numericAmount) && numericAmount > 0
-      ? `Send ${formatCurrency(numericAmount, sourceAccount.currency)}`
-      : 'Send';
+      ? `${formatCurrency(numericAmount, sourceAccount.currency)} küldése`
+      : 'Küldés';
 
   return (
     <Modal.Content>
       <Modal.Header>
-        <Modal.Title>New transfer</Modal.Title>
+        <Modal.Title>Új utalás</Modal.Title>
         <Modal.Description>
-          From {sourceAccount.ownerName} · {sourceAccount.currency} ·{' '}
+          Küldő: {sourceAccount.ownerName} · {sourceAccount.currency} ·{' '}
           {formatCurrency(sourceAccount.balance, sourceAccount.currency)}
         </Modal.Description>
       </Modal.Header>
@@ -70,7 +73,7 @@ export function TransferFlowForm() {
             control={control}
             name="toAccountId"
             options={destinationOptions}
-            placeholder="To account"
+            placeholder="Célszámla"
           />
           <div className="flex flex-col gap-1.5">
             <AmountInputField
@@ -80,13 +83,14 @@ export function TransferFlowForm() {
               size="lg"
             />
             <Typography variant="caption">
-              Currency is {sourceAccount.currency} — the source account's own. Fixed, not chosen.
+              A devizanem {sourceAccount.currency} — ez a forrásszámla sajátja. Rögzített, nem
+              választható.
             </Typography>
           </div>
         </Modal.Body>
         <Modal.Footer>
           <Modal.Close render={<Button type="button" variant="secondary" size="lg" />}>
-            Cancel
+            Mégse
           </Modal.Close>
           <Button type="submit" size="lg" disabled={!isValid}>
             {sendLabel}

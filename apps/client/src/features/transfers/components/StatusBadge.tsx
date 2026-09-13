@@ -3,9 +3,9 @@ import { Badge } from '@/components/ui/badge';
 import type { TransferStatus } from '../types';
 
 const LABEL: Record<TransferStatus, string> = {
-  COMPLETED: 'Completed',
-  PROCESSING: 'Processing',
-  FAILED: 'Failed',
+  COMPLETED: 'Teljesítve',
+  PROCESSING: 'Folyamatban',
+  FAILED: 'Sikertelen',
 };
 
 const VARIANT: Record<TransferStatus, 'completed' | 'processing' | 'failed'> = {

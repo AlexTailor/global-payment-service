@@ -64,8 +64,8 @@ describe('AccountSwitcher', () => {
 
   it('opens the New account modal from the panel action', async () => {
     renderSwitcher();
-    fireEvent.click(await screen.findByText('New account'));
+    fireEvent.click(await screen.findByText('Új számla'));
 
-    expect(await screen.findByRole('heading', { name: 'New account' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Új számla' })).toBeTruthy();
   });
 });

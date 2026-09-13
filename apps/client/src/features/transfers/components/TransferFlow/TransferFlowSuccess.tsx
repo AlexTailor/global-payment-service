@@ -29,17 +29,17 @@ export function TransferFlowSuccess() {
         <div className="mx-auto flex size-11 items-center justify-center rounded-full border border-accent">
           <Check className="size-5 text-accent" aria-hidden />
         </div>
-        <Modal.Title>Transfer completed</Modal.Title>
+        <Modal.Title>Sikeres utalás</Modal.Title>
         <Typography variant="caption">
-          {formatCurrency(result.amount, result.sourceCurrency)} sent to{' '}
-          {destination?.ownerName ?? 'the destination account'}
+          {formatCurrency(result.amount, result.sourceCurrency)} elküldve{' '}
+          {destination?.ownerName ?? 'a célszámla'} részére
         </Typography>
       </Modal.Header>
       <Modal.Body>
         <div className="flex flex-col divide-y divide-divider rounded-lg border border-divider">
           {crossCurrency && (
             <div className="flex items-center justify-between px-3.5 py-2.5">
-              <Typography variant="caption">Credited</Typography>
+              <Typography variant="caption">Jóváírva</Typography>
               <Typography variant="amount">
                 {formatCurrency(creditedAmount, result.targetCurrency)}
               </Typography>
@@ -47,29 +47,29 @@ export function TransferFlowSuccess() {
           )}
           {crossCurrency && result.exchangeRate && (
             <div className="flex items-center justify-between px-3.5 py-2.5">
-              <Typography variant="caption">Exchange rate</Typography>
+              <Typography variant="caption">Árfolyam</Typography>
               <Typography variant="amount">{result.exchangeRate.toFixed(4)}</Typography>
             </div>
           )}
           {currentSourceAccount && (
             <div className="flex items-center justify-between px-3.5 py-2.5">
-              <Typography variant="caption">New balance</Typography>
+              <Typography variant="caption">Új egyenleg</Typography>
               <Typography variant="amount">
                 {formatCurrency(currentSourceAccount.balance, currentSourceAccount.currency)}
               </Typography>
             </div>
           )}
           <div className="flex items-center justify-between px-3.5 py-2.5">
-            <Typography variant="caption">Reference</Typography>
+            <Typography variant="caption">Azonosító</Typography>
             <Typography variant="mono">{getTransactionReference(result.id)}</Typography>
           </div>
         </div>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="ghost" size="lg" onClick={reset}>
-          Send another
+          Új utalás küldése
         </Button>
-        <Modal.Close render={<Button size="lg" onClick={reset} />}>Done</Modal.Close>
+        <Modal.Close render={<Button size="lg" onClick={reset} />}>Kész</Modal.Close>
       </Modal.Footer>
     </Modal.Content>
   );

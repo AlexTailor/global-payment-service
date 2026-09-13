@@ -61,7 +61,7 @@ describe('getTransactionRowData', () => {
     );
 
     expect(row.signedAmount).toBeCloseTo(108);
-    expect(row.secondLine).toBe('€100.00 at 1.0800');
+    expect(row.secondLine).toBe('€100.00 · árfolyam: 1.0800');
   });
 
   it('does not convert a same-currency incoming transfer', () => {
@@ -81,7 +81,7 @@ describe('getTransactionRowData', () => {
       accounts,
     );
 
-    expect(row.secondLine).toBe('Resolving rate');
+    expect(row.secondLine).toBe('Árfolyam lekérése');
   });
 
   it('shows "Moving funds" while a same-currency transfer is processing', () => {
@@ -91,12 +91,12 @@ describe('getTransactionRowData', () => {
       accounts,
     );
 
-    expect(row.secondLine).toBe('Moving funds');
+    expect(row.secondLine).toBe('Pénz mozgatása');
   });
 
   it('shows a generic failure line for a failed transfer', () => {
     const row = getTransactionRowData(transfer({ status: 'FAILED' }), 'viewer', accounts);
-    expect(row.secondLine).toBe('Transfer failed');
+    expect(row.secondLine).toBe('Sikertelen utalás');
   });
 
   it('falls back to the reference as the second line otherwise', () => {
@@ -111,7 +111,7 @@ describe('getTransactionRowData', () => {
       accounts,
     );
 
-    expect(row.counterpartyName).toBe('Unknown');
+    expect(row.counterpartyName).toBe('Ismeretlen');
     expect(row.counterpartyCurrency).toBe(row.viewerCurrency);
   });
 });

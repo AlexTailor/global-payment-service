@@ -33,17 +33,19 @@ export function TransferFlowFailed() {
             <AlertCircle className="size-5 text-neutral-400" aria-hidden />
           )}
         </div>
-        <Modal.Title>{is503 ? "Couldn't get a rate" : 'Transfer failed'}</Modal.Title>
+        <Modal.Title>{is503 ? 'Nem sikerült lekérni az árfolyamot' : 'Sikertelen utalás'}</Modal.Title>
+        {/* error.message comes verbatim from the backend (ARCHITECTURE.md's own rule) — it
+            stays in whatever language the server sends, English for now. */}
         <Typography variant="error">{error.message}</Typography>
-        {is409 && <Typography variant="caption">Nothing was moved.</Typography>}
+        {is409 && <Typography variant="caption">Nem történt pénzmozgás.</Typography>}
       </Modal.Header>
       <Modal.Body>
         <div className="flex flex-col gap-2 rounded-lg border border-divider px-3.5 py-2.5">
-          <Typography variant="caption">FAILED · {error.code}</Typography>
+          <Typography variant="caption">SIKERTELEN · {error.code}</Typography>
           <Typography variant="caption">
             {is409
-              ? 'Retrying reuses the same idempotency key — it reclaims this attempt rather than creating a second one.'
-              : 'Safe to retry — same key, same transfer row.'}
+              ? 'Az újrapróbálkozás ugyanazt az idempotencia-kulcsot használja — ez a próbálkozást folytatja, nem egy újat hoz létre.'
+              : 'Biztonságosan újrapróbálható — ugyanaz a kulcs, ugyanaz az utalás.'}
           </Typography>
         </div>
       </Modal.Body>
@@ -51,26 +53,26 @@ export function TransferFlowFailed() {
         {is409 && (
           <>
             <Button variant="secondary" size="lg" onClick={editAmount}>
-              Edit amount
+              Összeg módosítása
             </Button>
             <Button size="lg" onClick={retry}>
               <RotateCw data-icon="inline-start" className="size-4" aria-hidden />
-              Try again
+              Újrapróbálás
             </Button>
           </>
         )}
         {is503 && (
           <>
             <Modal.Close render={<Button variant="secondary" size="lg" onClick={reset} />}>
-              Close
+              Bezárás
             </Modal.Close>
             <Button size="lg" onClick={retry}>
-              Retry now
+              Újrapróbálás most
             </Button>
           </>
         )}
         {!is409 && !is503 && (
-          <Modal.Close render={<Button size="lg" onClick={reset} />}>Close</Modal.Close>
+          <Modal.Close render={<Button size="lg" onClick={reset} />}>Bezárás</Modal.Close>
         )}
       </Modal.Footer>
     </Modal.Content>

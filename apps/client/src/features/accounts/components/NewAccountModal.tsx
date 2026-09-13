@@ -15,12 +15,15 @@ const CURRENCY_OPTIONS = [
 ];
 
 const schema = z.object({
-  ownerName: z.string().trim().min(1, 'Owner name is required.'),
+  ownerName: z.string().trim().min(1, 'A tulajdonos neve kötelező.'),
   currency: z.enum(['EUR', 'USD', 'HUF']),
   initialBalance: z
     .string()
-    .min(1, 'Amount is required.')
-    .refine((value) => !Number.isNaN(Number(value)) && Number(value) >= 0, 'Must be zero or more.'),
+    .min(1, 'Az összeg megadása kötelező.')
+    .refine(
+      (value) => !Number.isNaN(Number(value)) && Number(value) >= 0,
+      'Az összeg nulla vagy nagyobb kell legyen.',
+    ),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -73,22 +76,22 @@ export function NewAccountModal({ open, onOpenChange, onCreated }: NewAccountMod
     >
       <Modal.Content>
         <Modal.Header>
-          <Modal.Title>New account</Modal.Title>
+          <Modal.Title>Új számla</Modal.Title>
         </Modal.Header>
         <form onSubmit={onSubmit}>
           <Modal.Body>
-            <InputField control={control} name="ownerName" placeholder="Owner name" />
+            <InputField control={control} name="ownerName" placeholder="Tulajdonos neve" />
             <SegmentedControlField control={control} name="currency" options={CURRENCY_OPTIONS} />
             <AmountInputField
               control={control}
               name="initialBalance"
               currency={currency}
-              hint="Zero or more."
+              hint="Nulla vagy több."
             />
           </Modal.Body>
           <Modal.Footer>
             <Modal.Close render={<Button type="button" variant="secondary" size="lg" />}>
-              Cancel
+              Mégse
             </Modal.Close>
             <Button
               type="submit"
@@ -96,7 +99,7 @@ export function NewAccountModal({ open, onOpenChange, onCreated }: NewAccountMod
               disabled={!isValid || createAccount.isPending}
               loading={createAccount.isPending}
             >
-              Create account
+              Számla létrehozása
             </Button>
           </Modal.Footer>
         </form>

@@ -19,27 +19,29 @@ export function TransferFlowPending() {
   return (
     <Modal.Content showCloseButton={false}>
       <Modal.Header>
-        <Modal.Title>New transfer</Modal.Title>
+        <Modal.Title>Új utalás</Modal.Title>
       </Modal.Header>
       <Modal.Body>
         <div className="flex flex-col gap-3 rounded-lg bg-bg p-3.5">
           <div className="flex items-center gap-2.5">
             <Check className="size-4 text-accent" aria-hidden />
-            <Typography variant="body">Transfer accepted</Typography>
+            <Typography variant="body">Utalás elfogadva</Typography>
           </div>
           <div className="flex items-center gap-2.5">
             <Loader2 className="size-4 animate-spin text-accent-400" aria-hidden />
-            <Typography variant="body">Moving funds</Typography>
+            <Typography variant="body">Pénz mozgatása</Typography>
           </div>
         </div>
-        <Typography variant="caption">This can take a couple of seconds. Don't close the app.</Typography>
+        <Typography variant="caption">
+          Ez néhány másodpercet vehet igénybe. Ne zárd be az alkalmazást.
+        </Typography>
       </Modal.Body>
       <Modal.Footer>
         <Button type="button" variant="secondary" size="lg" disabled>
-          Cancel
+          Mégse
         </Button>
         <Button type="button" size="lg" loading>
-          Sending…
+          Küldés…
         </Button>
       </Modal.Footer>
     </Modal.Content>

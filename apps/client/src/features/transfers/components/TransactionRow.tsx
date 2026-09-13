@@ -21,15 +21,15 @@ export interface TransactionRowData {
 function formatRelativeDateTime(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' });
 
-  if (date.toDateString() === now.toDateString()) return `Today, ${time}`;
+  if (date.toDateString() === now.toDateString()) return `Ma, ${time}`;
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) return `Yesterday, ${time}`;
+  if (date.toDateString() === yesterday.toDateString()) return `Tegnap, ${time}`;
 
-  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+  return `${date.toLocaleDateString('hu-HU', { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 // The backend has no dedicated reference field — the transfer's own id is the one
@@ -55,18 +55,18 @@ export function getTransactionRowData(
 
   let secondLine: string;
   if (transfer.status === 'PROCESSING') {
-    secondLine = transfer.sourceCurrency !== transfer.targetCurrency ? 'Resolving rate' : 'Moving funds';
+    secondLine = transfer.sourceCurrency !== transfer.targetCurrency ? 'Árfolyam lekérése' : 'Pénz mozgatása';
   } else if (transfer.status === 'FAILED') {
-    secondLine = 'Transfer failed';
+    secondLine = 'Sikertelen utalás';
   } else if (direction === 'in' && transfer.exchangeRate) {
-    secondLine = `${formatCurrency(transfer.amount, transfer.sourceCurrency)} at ${transfer.exchangeRate.toFixed(4)}`;
+    secondLine = `${formatCurrency(transfer.amount, transfer.sourceCurrency)} · árfolyam: ${transfer.exchangeRate.toFixed(4)}`;
   } else {
     secondLine = reference;
   }
 
   return {
     direction,
-    counterpartyName: counterparty?.ownerName ?? 'Unknown',
+    counterpartyName: counterparty?.ownerName ?? 'Ismeretlen',
     counterpartyCurrency: counterparty?.currency ?? viewerCurrency,
     viewerCurrency,
     signedAmount,

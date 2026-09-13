@@ -27,11 +27,11 @@ describe('NewAccountModal', () => {
   it('disables submit and shows a validation error for a blank owner name', async () => {
     renderModal();
 
-    const ownerNameInput = screen.getByPlaceholderText('Owner name');
+    const ownerNameInput = screen.getByPlaceholderText('Tulajdonos neve');
     fireEvent.blur(ownerNameInput);
 
-    expect(await screen.findByText('Owner name is required.')).toBeTruthy();
-    const submitButton = screen.getByRole('button', { name: 'Create account' }) as HTMLButtonElement;
+    expect(await screen.findByText('A tulajdonos neve kötelező.')).toBeTruthy();
+    const submitButton = screen.getByRole('button', { name: 'Számla létrehozása' }) as HTMLButtonElement;
     expect(submitButton.disabled).toBe(true);
   });
 
@@ -42,7 +42,7 @@ describe('NewAccountModal', () => {
     fireEvent.change(balanceInput, { target: { value: '-5' } });
     fireEvent.blur(balanceInput);
 
-    expect(await screen.findByText('Must be zero or more.')).toBeTruthy();
+    expect(await screen.findByText('Az összeg nulla vagy nagyobb kell legyen.')).toBeTruthy();
   });
 
   it('submits the form and reports the created account id', async () => {
@@ -50,18 +50,18 @@ describe('NewAccountModal', () => {
     jest.mocked(accountsApi.createAccount).mockResolvedValue(createdAccount);
     const { onCreated } = renderModal();
 
-    const ownerNameInput = screen.getByPlaceholderText('Owner name');
+    const ownerNameInput = screen.getByPlaceholderText('Tulajdonos neve');
     fireEvent.change(ownerNameInput, { target: { value: 'Ada Lovelace' } });
     fireEvent.blur(ownerNameInput);
-    await waitFor(() => expect(screen.queryByText('Owner name is required.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('A tulajdonos neve kötelező.')).toBeNull());
 
     const balanceInput = screen.getByPlaceholderText('0');
     fireEvent.change(balanceInput, { target: { value: '100' } });
     fireEvent.blur(balanceInput);
-    await waitFor(() => expect(screen.queryByText('Amount is required.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Az összeg megadása kötelező.')).toBeNull());
 
     const submitButton = await waitFor(() => {
-      const button = screen.getByRole('button', { name: 'Create account' }) as HTMLButtonElement;
+      const button = screen.getByRole('button', { name: 'Számla létrehozása' }) as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       return button;
     });

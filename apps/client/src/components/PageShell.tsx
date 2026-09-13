@@ -40,11 +40,11 @@ function PageShellContent() {
         </Typography>
         <EmptyState
           icon={Wallet}
-          title="No accounts yet"
-          description="Create one to hold a balance and start sending money. You can add more currencies later."
+          title="Még nincs számla"
+          description="Nyiss számlát az egyenleg tárolásához és a pénzküldés megkezdéséhez. Később további devizanemek is hozzáadhatók."
         >
           <Button size="lg" onClick={openNewAccount}>
-            Create your first account
+            Első számla létrehozása
           </Button>
         </EmptyState>
       </div>
@@ -65,7 +65,7 @@ function PageShellContent() {
             {isDesktop && (
               <Button onClick={() => setTransferOpen(true)}>
                 <Plus data-icon="inline-start" className="size-4" aria-hidden />
-                New transfer
+                Új utalás
               </Button>
             )}
           </div>
@@ -74,14 +74,14 @@ function PageShellContent() {
       </Modal.Root>
 
       <div className="mt-5 mb-2.5 flex items-baseline justify-between">
-        <Typography variant="eyebrow">Transactions</Typography>
-        <Typography variant="caption">{transfers.length} · all statuses</Typography>
+        <Typography variant="eyebrow">Tranzakciók</Typography>
+        <Typography variant="caption">{transfers.length} · összes állapot</Typography>
       </div>
 
       {transfers.length === 0 ? (
         <EmptyState
-          title="Nothing here yet"
-          description="Transfers to and from this account will show up here, including ones that fail."
+          title="Még nincs itt semmi"
+          description="Az erre a számlára és innen induló utalások itt fognak megjelenni, beleértve a sikertelen utalásokat is."
         />
       ) : isDesktop ? (
         <TransactionTable transfers={transfers} viewerAccountId={selectedId} accounts={accounts} />
@@ -92,7 +92,7 @@ function PageShellContent() {
       {!isDesktop && (
         <div className="fixed inset-x-0 bottom-0 bg-linear-to-t from-bg from-55% to-transparent p-4 pt-8">
           <Button size="lg" className="w-full" onClick={() => setTransferOpen(true)}>
-            New transfer
+            Új utalás
           </Button>
         </div>
       )}

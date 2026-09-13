@@ -31,7 +31,7 @@ describe('TransactionList', () => {
 
     expect(screen.getByText('Alan Turing · USD')).toBeTruthy();
     expect(screen.getByText('-€100.00')).toBeTruthy();
-    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(screen.getByText('Teljesítve')).toBeTruthy();
   });
 });
 

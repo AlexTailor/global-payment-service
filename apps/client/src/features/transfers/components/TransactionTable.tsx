@@ -23,32 +23,32 @@ export function TransactionTable({
         <tr>
           <th className="pb-2 text-left">
             <Typography variant="eyebrow" className="opacity-60">
-              Date
+              Dátum
             </Typography>
           </th>
           <th className="pb-2 text-left">
             <Typography variant="eyebrow" className="opacity-60">
-              Counterparty
+              Partner
             </Typography>
           </th>
           <th className="pb-2 text-left">
             <Typography variant="eyebrow" className="opacity-60">
-              Reference
+              Azonosító
             </Typography>
           </th>
           <th className="pb-2 text-right">
             <Typography variant="eyebrow" className="opacity-60">
-              Amount
+              Összeg
             </Typography>
           </th>
           <th className="pb-2 text-right">
             <Typography variant="eyebrow" className="opacity-60">
-              Rate
+              Árfolyam
             </Typography>
           </th>
           <th className="pb-2 text-right">
             <Typography variant="eyebrow" className="opacity-60">
-              Status
+              Állapot
             </Typography>
           </th>
         </tr>
@@ -63,7 +63,7 @@ export function TransactionTable({
             >
               <td className="py-2.5">
                 <Typography className="text-neutral-400">
-                  {new Date(transfer.createdAt).toLocaleDateString()}
+                  {new Date(transfer.createdAt).toLocaleDateString('hu-HU')}
                 </Typography>
               </td>
               <td className="py-2.5">

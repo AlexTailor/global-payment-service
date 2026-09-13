@@ -77,12 +77,14 @@ async function fillAmount(amount: string) {
   const amountInput = screen.getByPlaceholderText('0');
   fireEvent.change(amountInput, { target: { value: amount } });
   fireEvent.blur(amountInput);
-  await waitFor(() => expect(screen.queryByText('Amount must be greater than 0.')).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByText('Az összegnek nullánál nagyobbnak kell lennie.')).toBeNull(),
+  );
 }
 
 async function submit() {
   const submitButton = await waitFor(() => {
-    const button = screen.getByRole('button', { name: /^Send/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /küldés/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     return button;
   });
@@ -97,7 +99,7 @@ describe('TransferFlow', () => {
   it('shows the source account context and excludes it from the destination options', () => {
     renderFlow();
 
-    expect(screen.getByText(/From Me · EUR/)).toBeTruthy();
+    expect(screen.getByText(/Küldő: Me · EUR/)).toBeTruthy();
     const select = screen.getByLabelText('toAccountId') as HTMLSelectElement;
     const optionLabels = Array.from(select.options).map((option) => option.textContent);
     expect(optionLabels).toContain('Alan Turing · EUR');
@@ -122,8 +124,8 @@ describe('TransferFlow', () => {
     await fillAmount('50');
     await submit();
 
-    expect(await screen.findByText('Transfer completed')).toBeTruthy();
-    expect(screen.getByText(/€50.00 sent to Alan Turing/)).toBeTruthy();
+    expect(await screen.findByText('Sikeres utalás')).toBeTruthy();
+    expect(screen.getByText(/€50.00 elküldve Alan Turing/)).toBeTruthy();
   });
 
   it('shows the 409 failure screen and retries with the same idempotency key', async () => {
@@ -138,12 +140,12 @@ describe('TransferFlow', () => {
     await fillAmount('50');
     await submit();
 
-    expect(await screen.findByText('Transfer failed')).toBeTruthy();
+    expect(await screen.findByText('Sikertelen utalás')).toBeTruthy();
     expect(
       screen.getByText('Account source has insufficient balance for this transfer'),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Újrapróbálás' }));
 
     await waitFor(() => expect(transfersApi.createTransfer).toHaveBeenCalledTimes(2));
     const [, firstKey] = jest.mocked(transfersApi.createTransfer).mock.calls[0];
@@ -160,10 +162,10 @@ describe('TransferFlow', () => {
     await chooseDestination('dest');
     await fillAmount('50');
     await submit();
-    expect(await screen.findByText('Transfer failed')).toBeTruthy();
+    expect(await screen.findByText('Sikertelen utalás')).toBeTruthy();
     const [, firstKey] = jest.mocked(transfersApi.createTransfer).mock.calls[0];
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit amount' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Összeg módosítása' }));
     expect(await screen.findByLabelText('toAccountId')).toBeTruthy();
 
     jest.mocked(transfersApi.createTransfer).mockResolvedValue({
@@ -197,7 +199,7 @@ describe('TransferFlow', () => {
     await fillAmount('50');
     await submit();
 
-    expect(await screen.findByText("Couldn't get a rate")).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Retry now' })).toBeTruthy();
+    expect(await screen.findByText('Nem sikerült lekérni az árfolyamot')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Újrapróbálás most' })).toBeTruthy();
   });
 });

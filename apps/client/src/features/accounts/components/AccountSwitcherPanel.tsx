@@ -18,10 +18,10 @@ export function AccountSwitcherPanel() {
   return (
     <Modal.Content>
       <Modal.Header className="flex-row items-center justify-between">
-        <Modal.Title>Accounts</Modal.Title>
+        <Modal.Title>Számlák</Modal.Title>
         <Typography variant="caption">
-          {accounts.length} account{accounts.length === 1 ? '' : 's'} · {currencyCount} currenc
-          {currencyCount === 1 ? 'y' : 'ies'}
+          {/* Hungarian nouns don't inflect for plural after a numeral, unlike English. */}
+          {accounts.length} számla · {currencyCount} devizanem
         </Typography>
       </Modal.Header>
       <Modal.Body>
@@ -38,7 +38,7 @@ export function AccountSwitcherPanel() {
         </div>
         <Button variant="ghost" size="sm" className="justify-start" onClick={openNewAccount}>
           <Plus data-icon="inline-start" className="size-4" aria-hidden />
-          New account
+          Új számla
         </Button>
       </Modal.Body>
     </Modal.Content>
