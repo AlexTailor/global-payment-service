@@ -56,3 +56,5 @@ test-output
 # .claude/skills/* are symlinks into here, meaningless without it)
 .agents/
 .claude/skills/
+
+storybook-static
