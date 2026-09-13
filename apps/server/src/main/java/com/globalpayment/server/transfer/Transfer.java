@@ -130,4 +130,8 @@ public class Transfer {
     public void markFailed() {
         this.status = TransferStatus.FAILED;
     }
+
+    public void markNotified() {
+        this.notifiedAt = Instant.now();
+    }
 }

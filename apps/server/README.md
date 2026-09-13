@@ -16,7 +16,7 @@ Cut whatever the 10-12h budget won't allow and log it in the root README's TODO 
 com.globalpayment.server
 ├── ServerApplication.java
 ├── account
-│   ├── Account.java                       (entity)
+│   ├── Account.java                       (entity — debit()/credit() mutators live here)
 │   ├── AccountController.java
 │   ├── AccountService.java
 │   ├── AccountRepository.java
@@ -26,18 +26,28 @@ com.globalpayment.server
 │   ├── Transfer.java                      (entity — also carries idempotency + notification state, see §2)
 │   ├── TransferStatus.java                (enum: PROCESSING, COMPLETED, FAILED)
 │   ├── TransferController.java
-│   ├── TransferService.java               ← core orchestration + idempotency branching lives here
+│   ├── TransferService.java               ← orchestrator: validation, idempotency branching,
+│   │                                          FX-rate resolution, optimistic-lock retry loop —
+│   │                                          not itself @Transactional, see TransferPersistence
+│   ├── TransferPersistence.java           (the three separately-@Transactional(REQUIRES_NEW)
+│   │                                        primitives §4/§5 need — has to be a different bean
+│   │                                        than TransferService, see its own class comment)
 │   ├── TransferRepository.java
 │   ├── TransferEventPublisher.java        (scheduled poller over notified_at, see §7)
+│   ├── TransferNotifier.java              (port; LoggingTransferNotifier is the only adapter —
+│   │                                        see §7 for the real-webhook extension point)
+│   ├── LoggingTransferNotifier.java
+│   ├── TransferCompletedEvent.java        (the published payload)
+│   ├── TransferNotFoundException.java     (mapped to `404`, shares a handler with `account.AccountNotFoundException`)
 │   ├── IdempotencyConflictException.java  (thrown by §4's two `409` branches)
 │   ├── InsufficientBalanceException.java  (thrown by §5's balance check, mapped to `409`)
 │   ├── InvalidTransferException.java      (cross-field validation the request DTO can't express
 │   │                                        alone — same account both sides, currency not
-│   │                                        matching the source account, cross-currency not yet
-│   │                                        supported; mapped to `400`)
+│   │                                        matching the source account; mapped to `400`)
 │   └── dto/ (TransferRequest, TransferResponse)
 ├── fx
-│   ├── ExchangeRateClient.java           (interface — port)
+│   ├── ExchangeRateClient.java           (interface — port, async: `CompletableFuture<BigDecimal>`,
+│   │                                       needed for @TimeLimiter to apply at all, see §6)
 │   ├── MockExchangeRateClient.java       (adapter, resilience annotations here — simulates the
 │   │                                       flaky external API in-process, no real HTTP call or
 │   │                                       separate mock server, see §6)
@@ -47,8 +57,16 @@ com.globalpayment.server
 └── common
     ├── GlobalExceptionHandler.java  (@ControllerAdvice)
     ├── ApiError.java
-    └── Money.java                   (BigDecimal wrapper if you want one)
+    ├── Currency.java                (enum: EUR, USD, HUF — shared by Account and Transfer)
+    ├── SecurityConfig.java          (permits all requests — auth is explicitly out of scope, see
+    │                                 root README TODO; without this, spring-boot-starter-security's
+    │                                 defaults would 401 every request behind a generated password)
+    └── SchedulingConfig.java        (@EnableScheduling, gated @Profile("!test") — see §7)
 ```
+
+`common.Money`, a possible `BigDecimal` wrapper floated early on, was never actually needed —
+`BigDecimal` directly, with explicit `setScale`/`RoundingMode` at the one place that multiplies
+by an FX rate (`TransferPersistence`), covered it without the extra type.
 
 This mirrors the Nest module shape you already think in: `controller → service → repository`,
 one feature folder per bounded concept. `fx` is separated out because it's the one place with
@@ -318,17 +336,27 @@ here. See §4 for how the two retry loops stay scoped to their own transactional
 
 ## 7. Propagating successful transfers (Fraud/Notification)
 
-Same durability guarantee as a transactional outbox, without a separate outbox table:
+**Implemented.** Same durability guarantee as a transactional outbox, without a separate outbox
+table:
 
 1. The transaction that flips `transfer.status` to `COMPLETED` (§4) leaves `notified_at`
    null — no extra write needed, it's the same row, same commit.
 2. A `@Scheduled(fixedDelay = 1000)` `TransferEventPublisher` polls
-   `where status = 'COMPLETED' and notified_at is null`, POSTs each to a configurable webhook
-   (or logs it, for the scope of this exercise — say explicitly in the README which you did),
-   and sets `notified_at` on success.
-3. If publishing fails, leave `notified_at` null — retried on the next poll. At-least-once
-   delivery; note in the README that consumers need to be idempotent on `transfer id` if this
-   went further.
+   `findByStatusAndNotifiedAtIsNull(COMPLETED)` and hands each one to `TransferNotifier`
+   (a port — `LoggingTransferNotifier` is the only adapter for now: logs the event at INFO,
+   which is the "even a structured log line" simplification below, not a real webhook POST yet),
+   then sets `notified_at` via `transfer.markNotified()` on success.
+3. If publishing fails (the notifier throws), leave `notified_at` null — retried on the next
+   poll. At-least-once delivery; consumers would need to be idempotent on `transfer id` if this
+   went further. One transfer's failure doesn't stop the others in the same poll: the publisher
+   isn't `@Transactional` itself, since each `transferRepository.save(...)` already commits
+   per-call (Spring Data's own per-method transaction boundary).
+
+`@EnableScheduling` lives on a `SchedulingConfig` gated `@Profile("!test")`, not directly on
+`ServerApplication` — a real background poller running in the same process as the tests would
+otherwise race a test's own check of `notified_at` (confirmed while writing
+`TransferEventPublisherIntegrationTest`: tests call `publishPendingEvents()` directly instead of
+waiting on the scheduler, so the real timer adds nothing but flakiness risk during test runs).
 
 Why not a separate `outbox_event` table: that pattern earns its keep once one commit can
 produce *multiple* event types across multiple aggregates. Here there's exactly one event

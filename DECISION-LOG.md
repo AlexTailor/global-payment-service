@@ -148,7 +148,12 @@ the transport (webhook vs. Kafka) is swappable later without touching this decis
 
 **Implementation note**: this lives as a nullable `notified_at` column on `transfer` rather than
 a separate `outbox_event` table — see #7 for why that's still the same guarantee with one fewer
-table.
+table. The publish step itself goes through a `TransferNotifier` port; the only adapter
+(`LoggingTransferNotifier`) logs the event rather than making a real HTTP call — there's no real
+Fraud Detection/Notification Center endpoint to call in this exercise, and a structured log line
+consumers could tail is the scope-appropriate stand-in named in the server README from the start.
+The port exists specifically so a real webhook adapter is a drop-in swap later, without touching
+the outbox mechanism (durability, retry-on-failure) this decision is actually about.
 
 ---
 

@@ -15,6 +15,9 @@ public interface TransferRepository extends JpaRepository<Transfer, UUID> {
     @Query("select t from Transfer t where t.fromAccountId = :accountId or t.toAccountId = :accountId")
     List<Transfer> findInvolvingAccount(@Param("accountId") UUID accountId);
 
+    /** Feeds {@link TransferEventPublisher} — every COMPLETED transfer not yet published. */
+    List<Transfer> findByStatusAndNotifiedAtIsNull(TransferStatus status);
+
     /**
      * The guarded FAILED -> PROCESSING transition (server README §4): the {@code status = 'FAILED'}
      * predicate is what makes this a compare-and-swap rather than a bare update — without it, two

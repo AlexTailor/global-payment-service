@@ -4,11 +4,12 @@ A payment gateway: Spring Boot backend managing accounts and transfers, React fr
 it. Built as an Nx monorepo (`apps/client` + `apps/server`) so both stacks share one task
 runner — see [Running the app](#running-the-app) for the current commands.
 
-**Status**: accounts and transfers are implemented end to end — full CRUD on both, idempotency
+**Status**: the backend's core is done — accounts and transfers end to end, idempotency
 (insert-first-then-branch, guarded `FAILED → PROCESSING` retry), optimistic-lock retry on
-concurrent balance updates, and cross-currency transfers via a Resilience4j-wrapped mocked FX
-client, all against the Flyway-managed schema. The outbox publisher and the frontend don't exist
-yet — see [TODO](#todo) for what's next and why in that order.
+concurrent balance updates, cross-currency transfers via a Resilience4j-wrapped mocked FX client,
+and the outbox publisher notifying Fraud Detection/Notification Center (currently a structured
+log line, a documented stand-in for a real webhook), all against the Flyway-managed schema. The
+frontend doesn't exist yet — see [TODO](#todo) for what's next and why in that order.
 
 ## Tech stack
 
@@ -85,10 +86,13 @@ amount correctly.
 **Propagating completed transfers (Fraud Detection / Notification Center)** — transactional
 outbox, implemented as a nullable `notified_at` column on `transfer` rather than a separate
 outbox table (see `DECISION-LOG.md` #7): it's left `null` in the same transaction that completes
-the transfer, and a scheduled poller publishes each unnotified row (webhook call for this build)
-and sets `notified_at`. Chosen over a direct in-transaction webhook call (which would risk a
-dual-write / lost-event problem) and over standing up a real broker (out of scope for the time
-budget — logged as a TODO). *(Not yet implemented.)*
+the transfer, and a scheduled poller (`TransferEventPublisher`) publishes each unnotified row and
+sets `notified_at`. The actual publish goes through a `TransferNotifier` port — for this build the
+only adapter logs the event (a legitimate stand-in at this scope, per server README §7); swapping
+in a real webhook POST is the extension point once a real Fraud Detection/Notification Center
+endpoint exists. Chosen over a direct in-transaction webhook call (which would risk a dual-write /
+lost-event problem) and over standing up a real broker (out of scope for the time budget — logged
+as a TODO).
 
 **CQRS** — considered, not adopted. Full CQRS (separate read/write models, typically paired with
 event sourcing) would buy independent read-side scaling and a built-in audit trail, but both are
@@ -160,7 +164,10 @@ Roughly in the order I'd tackle them:
    in-process mock with `@Retry`/`@CircuitBreaker`/`@TimeLimiter`; cross-currency transfers now
    supported. Deterministic tests mock `ExchangeRateClient` itself (`TransferFxTest`) rather than
    relying on the real mock's randomness.
-6. Outbox publisher (`transfer.notified_at` polling) for Fraud Detection / Notification Center.
+6. ~~Outbox publisher~~ — done: `TransferEventPublisher` (`@Scheduled`, polls
+   `notified_at is null`) + `TransferNotifier` port, `LoggingTransferNotifier` the only adapter
+   for now (logs the event — see the "propagating completed transfers" decision above for why
+   that's a legitimate stand-in at this scope, and item 8 below for the real-transport upgrade).
 7. The three frontend screens (Accounts, Transfer, Transactions) against the above.
 8. Real message broker (Kafka/RabbitMQ) instead of the outbox + webhook stand-in.
 9. Cypress e2e for the create-account → transfer → see-transaction path.
