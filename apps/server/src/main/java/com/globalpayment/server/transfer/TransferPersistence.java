@@ -1,7 +1,6 @@
 package com.globalpayment.server.transfer;
 
 import com.globalpayment.server.account.Account;
-import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -81,10 +80,8 @@ public class TransferPersistence {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Transfer executeAndComplete(
             UUID transferId, UUID fromAccountId, UUID toAccountId, BigDecimal amount, BigDecimal rate) {
-        Account fromAccount =
-                accountRepository.findById(fromAccountId).orElseThrow(() -> new AccountNotFoundException(fromAccountId));
-        Account toAccount =
-                accountRepository.findById(toAccountId).orElseThrow(() -> new AccountNotFoundException(toAccountId));
+        Account fromAccount = accountRepository.getOrThrow(fromAccountId);
+        Account toAccount = accountRepository.getOrThrow(toAccountId);
 
         if (fromAccount.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(fromAccount.getId());

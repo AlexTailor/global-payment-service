@@ -1,7 +1,6 @@
 package com.globalpayment.server.transfer;
 
 import com.globalpayment.server.account.Account;
-import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
 import com.globalpayment.server.common.Currency;
 import com.globalpayment.server.fx.ExchangeRateClient;
@@ -48,12 +47,8 @@ public class TransferService {
             throw new InvalidTransferException("fromAccountId and toAccountId must differ");
         }
 
-        Account fromAccount = accountRepository
-                .findById(request.fromAccountId())
-                .orElseThrow(() -> new AccountNotFoundException(request.fromAccountId()));
-        Account toAccount = accountRepository
-                .findById(request.toAccountId())
-                .orElseThrow(() -> new AccountNotFoundException(request.toAccountId()));
+        Account fromAccount = accountRepository.getOrThrow(request.fromAccountId());
+        Account toAccount = accountRepository.getOrThrow(request.toAccountId());
 
         if (request.currency() != fromAccount.getCurrency()) {
             throw new InvalidTransferException(

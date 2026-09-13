@@ -13,7 +13,6 @@ import com.globalpayment.server.common.Currency;
 import com.globalpayment.server.fx.ExchangeRateClient;
 import com.globalpayment.server.transfer.dto.TransferRequest;
 import java.math.BigDecimal;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,8 +55,8 @@ class TransferServiceRetryTest {
     }
 
     private void stubAccountLookups() {
-        when(accountRepository.findById(fromId)).thenReturn(Optional.of(fromAccount));
-        when(accountRepository.findById(toId)).thenReturn(Optional.of(toAccount));
+        when(accountRepository.getOrThrow(fromId)).thenReturn(fromAccount);
+        when(accountRepository.getOrThrow(toId)).thenReturn(toAccount);
     }
 
     @Test

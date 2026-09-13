@@ -25,6 +25,6 @@ public class AccountService {
     }
 
     public Account getAccount(UUID id) {
-        return accountRepository.findById(id).orElseThrow(() -> new AccountNotFoundException(id));
+        return accountRepository.getOrThrow(id);
     }
 }

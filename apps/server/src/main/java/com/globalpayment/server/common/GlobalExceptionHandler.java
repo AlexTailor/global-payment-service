@@ -21,38 +21,36 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({AccountNotFoundException.class, TransferNotFoundException.class})
     public ResponseEntity<ApiError> handleNotFound(RuntimeException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ApiError.of(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+        return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(IdempotencyConflictException.class)
     public ResponseEntity<ApiError> handleIdempotencyConflict(IdempotencyConflictException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of(HttpStatus.CONFLICT.value(), ex.getMessage()));
+        return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(InsufficientBalanceException.class)
     public ResponseEntity<ApiError> handleInsufficientBalance(InsufficientBalanceException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of(HttpStatus.CONFLICT.value(), ex.getMessage()));
+        return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     /** Bounded optimistic-lock retries exhausted (server README §5) — the client can just retry. */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<ApiError> handleOptimisticLockConflict(ObjectOptimisticLockingFailureException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of(HttpStatus.CONFLICT.value(), "Too much concurrent activity on one of the accounts; please retry"));
+        return error(HttpStatus.CONFLICT, "Too much concurrent activity on one of the accounts; please retry");
     }
 
     @ExceptionHandler(ExchangeRateUnavailableException.class)
     public ResponseEntity<ApiError> handleExchangeRateUnavailable(ExchangeRateUnavailableException ex) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE.value(), ex.getMessage()));
+        return error(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 
     @ExceptionHandler(InvalidTransferException.class)
     public ResponseEntity<ApiError> handleInvalidTransfer(InvalidTransferException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiError.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    private ResponseEntity<ApiError> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(ApiError.of(status.value(), message));
     }
 }
