@@ -16,6 +16,7 @@ describe('UI primitives', () => {
         <Button variant="primary">Primary</Button>
         <Button variant="secondary">Secondary</Button>
         <Button variant="ghost">Ghost</Button>
+        <Button loading>Loading</Button>
         <Badge variant="completed">Completed</Badge>
         <Badge variant="processing">Processing</Badge>
         <Badge variant="failed">Failed</Badge>

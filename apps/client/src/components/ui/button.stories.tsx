@@ -43,3 +43,7 @@ export const Large: Story = {
 export const Disabled: Story = {
   args: { variant: 'primary', disabled: true },
 };
+
+export const Loading: Story = {
+  args: { variant: 'primary', loading: true },
+};
