@@ -121,4 +121,12 @@ public class Transfer {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public void markCompleted() {
+        this.status = TransferStatus.COMPLETED;
+    }
+
+    public void markFailed() {
+        this.status = TransferStatus.FAILED;
+    }
 }

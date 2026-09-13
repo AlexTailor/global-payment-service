@@ -4,26 +4,26 @@ import com.globalpayment.server.account.Account;
 import com.globalpayment.server.account.AccountNotFoundException;
 import com.globalpayment.server.account.AccountRepository;
 import com.globalpayment.server.transfer.dto.TransferRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Deliberately not {@code @Transactional} — this is a plain orchestrator over
+ * {@link TransferPersistence}'s three separately-transactional steps (server README §4). FX/
+ * cross-currency transfers and optimistic-lock retry on the account updates aren't implemented
+ * yet; both are the next build-order steps (root README TODO).
+ */
 @Service
 public class TransferService {
 
     private final AccountRepository accountRepository;
-    private final TransferRepository transferRepository;
+    private final TransferPersistence transferPersistence;
 
-    public TransferService(AccountRepository accountRepository, TransferRepository transferRepository) {
+    public TransferService(AccountRepository accountRepository, TransferPersistence transferPersistence) {
         this.accountRepository = accountRepository;
-        this.transferRepository = transferRepository;
+        this.transferPersistence = transferPersistence;
     }
 
-    /**
-     * Happy path only for now: no idempotency-conflict handling (a duplicate key currently hits
-     * the raw DB unique constraint), no FX (only same-currency transfers), no optimistic-lock
-     * retry on the account updates. All three are the next build-order steps (root README TODO).
-     */
-    @Transactional
     public Transfer createTransfer(TransferRequest request, String idempotencyKey) {
         if (request.fromAccountId().equals(request.toAccountId())) {
             throw new InvalidTransferException("fromAccountId and toAccountId must differ");
@@ -45,14 +45,8 @@ public class TransferService {
             // transfers are supported until it lands.
             throw new InvalidTransferException("cross-currency transfers are not yet supported");
         }
-        if (fromAccount.getBalance().compareTo(request.amount()) < 0) {
-            throw new InsufficientBalanceException(fromAccount.getId());
-        }
 
-        fromAccount.debit(request.amount());
-        toAccount.credit(request.amount());
-
-        Transfer transfer = new Transfer(
+        Transfer candidate = new Transfer(
                 idempotencyKey,
                 fromAccount.getId(),
                 toAccount.getId(),
@@ -60,7 +54,25 @@ public class TransferService {
                 fromAccount.getCurrency(),
                 toAccount.getCurrency(),
                 null,
-                TransferStatus.COMPLETED);
-        return transferRepository.save(transfer);
+                TransferStatus.PROCESSING);
+
+        Transfer owned;
+        try {
+            owned = transferPersistence.attemptClaim(candidate);
+        } catch (DataIntegrityViolationException conflict) {
+            Transfer reclaimed = transferPersistence.reclaim(idempotencyKey);
+            if (reclaimed.getStatus() == TransferStatus.COMPLETED) {
+                return reclaimed; // safe replay — the row IS the response
+            }
+            owned = reclaimed; // FAILED -> PROCESSING; this call now owns the retry
+        }
+
+        try {
+            return transferPersistence.executeAndComplete(
+                    owned.getId(), owned.getFromAccountId(), owned.getToAccountId(), owned.getAmount());
+        } catch (RuntimeException failure) {
+            transferPersistence.markFailed(owned.getId());
+            throw failure;
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.globalpayment.server.common;
 
 import com.globalpayment.server.account.AccountNotFoundException;
+import com.globalpayment.server.transfer.IdempotencyConflictException;
 import com.globalpayment.server.transfer.InsufficientBalanceException;
 import com.globalpayment.server.transfer.InvalidTransferException;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleAccountNotFound(AccountNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiError> handleIdempotencyConflict(IdempotencyConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(InsufficientBalanceException.class)
