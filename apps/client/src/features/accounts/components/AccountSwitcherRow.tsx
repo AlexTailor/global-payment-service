@@ -2,6 +2,7 @@ import { Check } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/currency';
+import { Modal } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Typography } from '@/components/ui/typography';
 
@@ -16,15 +17,19 @@ interface AccountSwitcherRowProps {
 
 export function AccountSwitcherRow({ account, selected, switching, onSelect }: AccountSwitcherRowProps) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(account.id)}
-      className={cn(
-        'flex h-16 w-full items-center justify-between rounded-lg border px-3.5 text-left transition-colors md:h-11 md:px-2.5',
-        selected
-          ? 'border-accent bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]'
-          : 'border-divider hover:bg-[color-mix(in_srgb,var(--color-neutral-500)_7%,transparent)]',
-      )}
+    <Modal.Close
+      render={
+        <button
+          type="button"
+          onClick={() => onSelect(account.id)}
+          className={cn(
+            'flex h-16 w-full items-center justify-between rounded-lg border px-3.5 text-left transition-colors md:h-11 md:px-2.5',
+            selected
+              ? 'border-accent bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]'
+              : 'border-divider hover:bg-[color-mix(in_srgb,var(--color-neutral-500)_7%,transparent)]',
+          )}
+        />
+      }
     >
       <span className="flex flex-col gap-0.5">
         <Typography variant="body">{account.ownerName}</Typography>
@@ -40,6 +45,6 @@ export function AccountSwitcherRow({ account, selected, switching, onSelect }: A
           {selected && <Check className="size-4 text-accent" aria-hidden />}
         </span>
       )}
-    </button>
+    </Modal.Close>
   );
 }
