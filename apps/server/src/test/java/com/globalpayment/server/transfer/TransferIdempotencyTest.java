@@ -10,6 +10,7 @@ import com.globalpayment.server.account.AccountRepository;
 import com.globalpayment.server.common.Currency;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -19,7 +20,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -162,15 +162,53 @@ class TransferIdempotencyTest {
                 .isEqualTo(TransferStatus.COMPLETED);
     }
 
-    /** Starts {@code threads} callers at (as close as possible to) the same instant. */
+    @Test
+    void concurrentTransfersWithDifferentKeysOnTheSameAccountBothSucceed() throws Exception {
+        // Independent of idempotency (server README §5): two different keys, same source
+        // account, at once. In practice two real threads usually just serialize cleanly rather
+        // than genuinely interleave, so this doesn't reliably prove the optimistic-lock retry
+        // itself fires — TransferServiceRetryTest proves that deterministically with a mocked
+        // TransferPersistence. This test is about the end state: concurrent access to the same
+        // account must never corrupt a balance or crash unhandled, retry or no retry.
+        Account shared = accountRepository.save(new Account("Payer", Currency.EUR, BigDecimal.valueOf(100)));
+        Account toB = accountRepository.save(new Account("PayeeB", Currency.EUR, BigDecimal.valueOf(0)));
+        Account toC = accountRepository.save(new Account("PayeeC", Currency.EUR, BigDecimal.valueOf(0)));
+        String keyToB = UUID.randomUUID().toString();
+        String keyToC = UUID.randomUUID().toString();
+
+        List<Integer> statuses = fireConcurrentlyWith(
+                () -> mockMvc.perform(transferRequest(keyToB, shared.getId(), toB.getId(), "10", Currency.EUR))
+                        .andReturn()
+                        .getResponse()
+                        .getStatus(),
+                () -> mockMvc.perform(transferRequest(keyToC, shared.getId(), toC.getId(), "10", Currency.EUR))
+                        .andReturn()
+                        .getResponse()
+                        .getStatus());
+
+        assertThat(statuses).containsExactly(201, 201);
+        assertThat(accountRepository.findById(shared.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("80");
+        assertThat(accountRepository.findById(toB.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("10");
+        assertThat(accountRepository.findById(toC.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("10");
+    }
+
+    /** Starts two copies of the same call at (as close as possible to) the same instant. */
     private List<Integer> fireConcurrently(Callable<Integer> call) throws Exception {
-        int threads = 2;
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
-        CountDownLatch ready = new CountDownLatch(threads);
+        return fireConcurrentlyWith(call, call);
+    }
+
+    /** Starts both calls at (as close as possible to) the same instant. */
+    @SafeVarargs
+    private List<Integer> fireConcurrentlyWith(Callable<Integer>... calls) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(calls.length);
+        CountDownLatch ready = new CountDownLatch(calls.length);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            List<Future<Integer>> futures = IntStream.range(0, threads)
-                    .mapToObj(i -> executor.submit(() -> {
+            List<Future<Integer>> futures = Arrays.stream(calls)
+                    .map(call -> executor.submit(() -> {
                         ready.countDown();
                         start.await();
                         return call.call();

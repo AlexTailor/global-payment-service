@@ -7,6 +7,7 @@ import com.globalpayment.server.transfer.InvalidTransferException;
 import com.globalpayment.server.transfer.TransferNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -33,6 +34,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleInsufficientBalance(InsufficientBalanceException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    /** Bounded optimistic-lock retries exhausted (server README §5) — the client can just retry. */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLockConflict(ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT.value(), "Too much concurrent activity on one of the accounts; please retry"));
     }
 
     @ExceptionHandler(InvalidTransferException.class)

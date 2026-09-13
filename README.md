@@ -4,10 +4,11 @@ A payment gateway: Spring Boot backend managing accounts and transfers, React fr
 it. Built as an Nx monorepo (`apps/client` + `apps/server`) so both stacks share one task
 runner — see [Running the app](#running-the-app) for the current commands.
 
-**Status**: Nx/Spring Boot scaffold plus the database schema (Flyway migration for `account` and
-`transfer`, see [Backend notes](#backend-notes)). No entities, endpoints, idempotency, outbox, or
-FX resilience code exists yet — those are the target design described below and are tracked as
-the first items in [TODO](#todo).
+**Status**: accounts and transfers are implemented end to end — full CRUD on both, idempotency
+(insert-first-then-branch, guarded `FAILED → PROCESSING` retry), and optimistic-lock retry on
+concurrent balance updates, all against the Flyway-managed schema. Only same-currency transfers
+are supported so far. FX/cross-currency, the outbox publisher, and the frontend don't exist yet
+— see [TODO](#todo) for what's next and why in that order.
 
 ## Tech stack
 
@@ -58,13 +59,16 @@ winner's state directly off that row and responds accordingly (`PROCESSING` → 
 → replay the original `201`, `FAILED` → the row is reused in place via a guarded update, not
 deleted and reinserted). Detecting a reused key with a mismatched payload (`422`) isn't
 implemented — that needs a stored request hash the data model deliberately leaves out; logged as
-a TODO instead. To be covered by a concurrency test that fires the same key twice in parallel and
-asserts exactly one transfer was created. *(Not yet implemented — see TODO.)*
+a TODO instead. Covered by concurrency tests that fire the same key twice in parallel and assert
+exactly one transfer was created (`TransferIdempotencyTest`).
 
 **Account balance concurrency** — optimistic locking (`@Version` on `Account`) with a bounded
-retry on conflict, chosen over pessimistic `SELECT ... FOR UPDATE` for simplicity of reasoning at
-this scope; the pessimistic-locking-with-consistent-lock-order alternative was considered and
-rejected. *(Not yet implemented.)*
+retry (3 attempts) on conflict, chosen over pessimistic `SELECT ... FOR UPDATE` for simplicity of
+reasoning at this scope; the pessimistic-locking-with-consistent-lock-order alternative was
+considered and rejected. Real-thread concurrency tests don't reliably force two transactions to
+interleave (they usually just serialize cleanly), so the retry loop itself is verified
+deterministically with a mocked persistence layer (`TransferServiceRetryTest`) rather than hoped
+for from a race.
 
 **Currency conversion / FX resilience** — the FX client will be wrapped with Resilience4j retry +
 circuit breaker + time limiter rather than called directly; a failed lookup after retries returns
@@ -139,13 +143,15 @@ Full reasoning: `DECISION-LOG.md` #4 and #7, algorithm: `server/README.md` §4.
 
 Roughly in the order I'd tackle them:
 
-1. ~~Flyway migration for `account`/`transfer`~~ — done (`db/migration/V1__init.sql`), so the
-   next steps build entities against a real schema instead of `ddl-auto=update`.
-2. `Account`/`Transfer` JPA entities + repositories + `POST /api/transfers` + transactions query
-   endpoint — nothing works end-to-end without this.
-3. `X-Idempotency-Key` handling (insert-first-then-branch + concurrency test) — a stated hard
-   requirement, and easiest to get right before other logic builds on top of it.
-4. Optimistic-locking retry on `Account` balance updates.
+1. ~~Flyway migration for `account`/`transfer`~~ — done (`db/migration/V1__init.sql`).
+2. ~~`Account`/`Transfer` JPA entities + repositories + accounts/transfers CRUD endpoints~~ —
+   done: `POST`/`GET /api/accounts`, `GET /api/accounts/{id}`, `POST`/`GET /api/transfers`,
+   `GET /api/transfers/{id}`.
+3. ~~`X-Idempotency-Key` handling~~ — done: insert-first-then-branch, guarded
+   `FAILED → PROCESSING` reclaim, concurrency tests (`TransferIdempotencyTest`).
+4. ~~Optimistic-locking retry on `Account` balance updates~~ — done: bounded retry (3 attempts)
+   in `TransferService`, deterministically tested via a mocked `TransferPersistence`
+   (`TransferServiceRetryTest`) since real-thread races don't reliably force the interleaving.
 5. Mocked FX API + Resilience4j wrapping (retry/circuit breaker/time limiter).
 6. Outbox publisher (`transfer.notified_at` polling) for Fraud Detection / Notification Center.
 7. The three frontend screens (Accounts, Transfer, Transactions) against the above.

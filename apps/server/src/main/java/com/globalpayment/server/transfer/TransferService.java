@@ -7,16 +7,21 @@ import com.globalpayment.server.transfer.dto.TransferRequest;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 /**
  * Deliberately not {@code @Transactional} — this is a plain orchestrator over
  * {@link TransferPersistence}'s three separately-transactional steps (server README §4). FX/
- * cross-currency transfers and optimistic-lock retry on the account updates aren't implemented
- * yet; both are the next build-order steps (root README TODO).
+ * cross-currency transfers aren't implemented yet (root README TODO).
  */
 @Service
 public class TransferService {
+
+    /** Bounded retry on account-version conflicts (server README §5) — 2-3 attempts total. */
+    private static final int MAX_OPTIMISTIC_LOCK_ATTEMPTS = 3;
+
+    private static final long OPTIMISTIC_LOCK_BACKOFF_MILLIS = 25;
 
     private final AccountRepository accountRepository;
     private final TransferRepository transferRepository;
@@ -75,11 +80,40 @@ public class TransferService {
         }
 
         try {
-            return transferPersistence.executeAndComplete(
-                    owned.getId(), owned.getFromAccountId(), owned.getToAccountId(), owned.getAmount());
+            return executeWithOptimisticLockRetry(owned);
         } catch (RuntimeException failure) {
             transferPersistence.markFailed(owned.getId());
             throw failure;
+        }
+    }
+
+    /**
+     * Retries only {@link ObjectOptimisticLockingFailureException} — a version conflict on one of
+     * the two accounts from a *different* idempotency key touching the same account concurrently
+     * (server README §5). Each attempt calls {@link TransferPersistence#executeAndComplete}
+     * fresh, so both the account reads and the balance check are never stale. Any other exception
+     * (e.g. insufficient balance) propagates immediately — retrying wouldn't change the outcome.
+     */
+    private Transfer executeWithOptimisticLockRetry(Transfer owned) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transferPersistence.executeAndComplete(
+                        owned.getId(), owned.getFromAccountId(), owned.getToAccountId(), owned.getAmount());
+            } catch (ObjectOptimisticLockingFailureException conflict) {
+                if (attempt >= MAX_OPTIMISTIC_LOCK_ATTEMPTS) {
+                    throw conflict;
+                }
+                sleepBriefly();
+            }
+        }
+    }
+
+    private void sleepBriefly() {
+        try {
+            Thread.sleep(OPTIMISTIC_LOCK_BACKOFF_MILLIS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while backing off an optimistic-lock retry", interrupted);
         }
     }
 
