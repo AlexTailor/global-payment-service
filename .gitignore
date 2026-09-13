@@ -51,3 +51,8 @@ Thumbs.db
 vite.config.*.timestamp*
 test-output
 *.env
+
+# Vendored skill content fetched by `/reload-skills` (skills-lock.json tracks what's installed;
+# .claude/skills/* are symlinks into here, meaningless without it)
+.agents/
+.claude/skills/

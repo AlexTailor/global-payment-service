@@ -165,6 +165,31 @@ onto a profile-gated config after noticing a real background poller running duri
 race a test's own assertion about `notified_at` — caught while writing the test, not after it
 flaked.
 
+**Prompt**: "Time to create a high level architecture for the frontend — I made a UI mockup
+[the `design-handoff/` bundle] — stick with the separations and folder structure I use in my
+other projects."
+**Produced**: the question of which folder-structure convention that meant (feature-sliced vs.
+layer-based vs. something else) — there was no way to infer a personal convention from this
+repo alone.
+**Outcome**: *feature-sliced chosen*, `apps/client/ARCHITECTURE.md` written against it.
+
+**Prompt**: "Use the new react related skills and refine the architecture also extend it with a
+basic ui lib with the primitives and basic ui comps" (after `/reload-skills` surfaced
+`vercel-composition-patterns`, `vercel-react-best-practices`, `vercel-react-view-transitions`,
+`vercel-react-native-skills`).
+**Produced**: `vercel-react-native-skills` was skipped (this is a responsive web app, not React
+Native/Expo — a skill trigger existing isn't a reason to apply it). The other three were loaded;
+`ARCHITECTURE.md` was revised to express `TransferFlow` and `AccountSwitcher` as compound
+components with a provider-owned `{state, actions, meta}` interface (composition-patterns), plus
+the versioned/try-caught `localStorage` schema and lazy-loading the two modals not needed on
+first paint (react-best-practices). `vercel-react-view-transitions` was read but not applied —
+there's no component code yet to animate.
+**Outcome**: *accepted*. One thing corrected along the way: `TransferFlow.Failed` handling both
+`409` and `503` inside one component could look like exactly the boolean/mode-prop pattern
+composition-patterns warns against. It isn't — the branch reads already-resolved domain data
+(`state.error.status`) off context, not a caller-supplied flag — but the distinction is easy to
+miss, so `ARCHITECTURE.md` spells it out explicitly rather than leaving it implicit.
+
 ---
 
 ## Discarded suggestions
@@ -188,6 +213,9 @@ During implementation, a few concrete alternatives were surfaced and not taken:
   (see above) was superseded once implementation actually started: `Currency` instead of
   `String` (the enum already exists everywhere else in the domain), and async instead of
   synchronous (see the `@TimeLimiter` entry above).
+- **Layer-based frontend folders** (`components/`, `hooks/`, `api/` each holding every feature's
+  files, grouped by filename rather than by folder) — a real option offered for the client
+  architecture; feature-sliced was chosen instead as the closer match to the stated convention.
 
 ---
 
@@ -212,6 +240,17 @@ During implementation, a few concrete alternatives were surfaced and not taken:
     `nx-import`, `nx-plugins`, and `monitor-ci` skills referenced by `CLAUDE.md`. Pre-existing
     infrastructure from the Nx scaffold, not assembled for this exercise, but real tooling this
     session relied on for correct Nx usage instead of guessing CLI flags.
+  - **`vercel-labs/agent-skills`** (`skills-lock.json`), added mid-project once frontend work
+    started: `vercel-composition-patterns` (compound components, generic `{state, actions, meta}`
+    context interfaces, explicit variants over boolean props) and `vercel-react-best-practices`
+    (render/state-update hygiene, code-splitting) directly shaped `apps/client/ARCHITECTURE.md` —
+    e.g. `TransferFlow`/`AccountSwitcher` as compound components with a provider owning the state
+    interface, and the versioned/try-caught `localStorage` schema for the selected-account id.
+    `vercel-react-view-transitions` was loaded but not yet applied to anything (no components
+    exist to animate yet). The vendored skill content itself (`.agents/`, `.claude/skills/*`
+    symlinks) is gitignored — fetched by `/reload-skills`, not authored — but `skills-lock.json`
+    (which skills, which versions) is committed, the same reasoning as a lockfile for any other
+    dependency.
 
 Left in the repo per the assignment's own instruction that AI-workflow config is a signal, not
 noise.
