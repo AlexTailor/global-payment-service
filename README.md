@@ -2,14 +2,16 @@
 
 A payment gateway: Spring Boot backend managing accounts and transfers, React frontend to use
 it. Built as an Nx monorepo (`apps/client` + `apps/server`) so both stacks share one task
-runner — see [Running the app](#running-the-app) for the current commands.
+runner — see [SETUP.md](SETUP.md) to build and run it from scratch.
 
-**Status**: the backend's core is done — accounts and transfers end to end, idempotency
+**Status**: both apps are built end to end. Backend: accounts and transfers, idempotency
 (insert-first-then-branch, guarded `FAILED → PROCESSING` retry), optimistic-lock retry on
 concurrent balance updates, cross-currency transfers via a Resilience4j-wrapped mocked FX client,
 and the outbox publisher notifying Fraud Detection/Notification Center (currently a structured
-log line, a documented stand-in for a real webhook), all against the Flyway-managed schema. The
-frontend doesn't exist yet — see [TODO](#todo) for what's next and why in that order.
+log line, a documented stand-in for a real webhook), all against the Flyway-managed schema.
+Frontend: the three required screens (Accounts, Transfer, Transactions) as one page over that
+API — see [Screen structure, UX, and visual design](#screen-structure-ux-and-visual-design) for
+what was built and why. See [TODO](#todo) for what's left and in what order.
 
 ## Expectation from the UX/UI team
   Create a detailed diagram about the transaction flow what we can discuss and refine together before putting it into the sprint. A Figma design with different screen sizes to catch design issues early and iterate on it.
@@ -39,7 +41,7 @@ frontend doesn't exist yet — see [TODO](#todo) for what's next and why in that
 
 ## High-level architecture
 
-Target design once the domain layer is built:
+As built:
 
 ```
 React SPA -> Spring Boot API layer -> Domain layer (transfer orchestration, idempotency) -> Postgres
@@ -105,10 +107,13 @@ screen show stale data right after a transfer. Plan is a lightweight command/que
 instead — one transactional write path, separate read-only query services — same database, no
 eventual consistency.
 
-**Idempotency key generation (frontend)** — generated client-side (`crypto.randomUUID()`) per
-transfer attempt and reused across retries of the same attempt, so a network retry from the
-browser lines up with the backend's idempotency contract instead of minting a new key each time.
-*(Not yet implemented — no transfer screen exists yet.)*
+**Idempotency key generation (frontend)** — generated client-side (`crypto.randomUUID()`) once
+when the user submits the transfer form (`TransferFlowProvider`), held in that component's state,
+and reused across every automatic or manual retry of that same attempt; a fresh key is only
+minted when the user starts a genuinely new transfer (reopening the modal, or editing the form
+after a failure). This is the client half of the backend's idempotency contract — without it, a
+network retry from the browser would never actually exercise the `X-Idempotency-Key` handling
+described above. Full reasoning: `DECISION-LOG.md` #6.
 
 **Frontend stack, beyond the React + TypeScript requirement:**
 
@@ -125,11 +130,47 @@ browser lines up with the backend's idempotency contract instead of minting a ne
 Fuller reasoning and rejected alternatives for each of these: see `DECISION-LOG.md`.
 
 **Screen structure, UX, and visual design** — TASK.md asks what was prioritized here beyond the
-three required capabilities (Accounts, Transfer, Transactions). Not yet written: there's no
-frontend code yet to honestly rationalize decisions about (navigation structure, loading/error
-feedback on the transfer flow, optimistic UI on retry, etc.) — this section gets filled in
-alongside the frontend build itself, not before it, so it describes what was actually built
-rather than a plan that may not survive contact with it.
+three required capabilities (Accounts, Transfer, Transactions).
+
+- **One page, not three routes.** All three capabilities live on a single `PageShell`: a header
+  with an account switcher, that account's balance and transaction list below it, and every
+  create action (new account, new transfer) opening as a modal over the same page rather than a
+  navigation. There's nothing here that benefits from being a separate route — a router would add
+  a moving part (history state, deep links to keep in sync with query state) for no real gain at
+  this scope, and a single page keeps the account context (which account is "selected") in one
+  place instead of threading it through URL params.
+- **Mockups first, in a disposable design tool, before any component code.** The screens were
+  drafted as a static HTML mockup board (`apps/client/design-handoff/`, one bundle per breakpoint
+  and per state — loading, empty, success, 409, 503) and only then translated into the app's real
+  stack (shadcn/ui on Base UI, Tailwind v4, Lucide, Geist). That handoff doc is why the two
+  failure screens (insufficient balance vs. FX unavailable) read differently: a `409` is treated
+  as a rejection ("Nothing was moved," edit and retry), a `503` as an outage ("Safe to retry —
+  same key, same transfer row") — matching the different backend semantics from
+  [Key technical decisions](#key-technical-decisions) instead of one generic error state for both.
+- **The transfer flow is one modal with four swapped bodies** (filling in → pending → success →
+  failed), not a page-per-step wizard, so the header amount and from/to context stay visually
+  constant and the whole attempt reads as one continuous act. The pending state shows a three-step
+  checklist ("Transfer accepted" → "Resolving rate" → "Moving funds") rather than a bare spinner,
+  because the FX resolve step can visibly take a couple of seconds (Resilience4j retries) and a
+  silent spinner over that gap reads as broken rather than working.
+- **Account switching is optimistic.** Selecting a different account in the switcher applies the
+  selected state immediately and shows a skeleton balance while `['accounts']`/`['transfers']`
+  refetch, instead of waiting on the network before the UI reacts — the same reasoning as the
+  pending-transfer checklist: perceived responsiveness matters more here than strict
+  request/response ordering, and there's nothing destructive in "guessed wrong for 200ms."
+- **Responsive, not adaptive**: one breakpoint at 768px switches the transaction list into a table
+  and moves the switcher/"new transfer" action into the header row; there's no separate mobile
+  build, just one component tree with a `useMediaQuery` branch (`PageShell.tsx`) so phone and
+  desktop stay a single source of truth for behavior.
+- **All UI copy is in Hungarian.** The assignment (`TASK.md`) and its intended reviewers are
+  Hungarian; localizing the interface — not just the docs — was judged worth doing for a
+  3-screen app small enough that it didn't need an i18n library to do it (strings are written
+  directly in the components; see [TODO](#todo) if this app ever needed a second locale).
+- **Deliberately skipped at this scope**: client-side routing, a design-token/theming package
+  (Tailwind `@theme` variables in one stylesheet cover a single-theme app), and the "variation"
+  screens the design doc sketched but didn't commit to (grouped-by-day list, expandable rows,
+  multi-step transfer review, keypad entry) — the baseline flow was worth building well over
+  building several UI concepts shallowly.
 
 ## How I started
 
@@ -170,8 +211,7 @@ Resilience, concurrency, and reliability handling — all implemented, per
 
 ## Testing
 
-Approach across the stack (backend only exists so far — frontend testing is planned per the
-[tech stack](#tech-stack) table's "why" column, not yet built):
+Approach across the stack:
 
 - **Unit** (deterministic, no Spring context or database): `TransferServiceRetryTest` mocks
   `TransferPersistence` to force an optimistic-lock conflict and verify the retry loop itself —
@@ -192,8 +232,16 @@ Approach across the stack (backend only exists so far — frontend testing is pl
 - Every backend change was also run live against real Postgres (`docker compose up -d postgres`
   + `curl`) before being committed, not just against the H2 test suite — this is what caught two
   real H2/Postgres divergences during development (`DECISION-LOG.md` #8, `PROMPTS.md`).
+- **Frontend** (React Testing Library, Jest): component/hook-level tests over the pieces with real
+  logic rather than the whole tree — `useSelectedAccount` (persistence/fallback logic), the
+  account switcher and new-account modal, the transaction list/row (amount sign, currency
+  formatting, status badge), and `TransferFlow`'s own state machine (filling in → pending →
+  success/failed, including that a retry reuses the same idempotency key rather than minting a
+  new one). No e2e runner yet (Cypress — see [TODO](#todo)), so the create-account → transfer →
+  see-transaction path is currently verified manually, not by an automated end-to-end test.
 
-29 tests across 8 classes as of the last backend commit; `npx nx run server:test` runs all of them.
+29 backend tests across 8 classes as of the last backend commit; `npx nx run server:test` runs
+all of them. `npx nx test client` runs the frontend suite.
 
 ## TODO
 
@@ -217,7 +265,9 @@ Roughly in the order I'd tackle them:
    `notified_at is null`) + `TransferNotifier` port, `LoggingTransferNotifier` the only adapter
    for now (logs the event — see the "propagating completed transfers" decision above for why
    that's a legitimate stand-in at this scope, and item 8 below for the real-transport upgrade).
-7. The three frontend screens (Accounts, Transfer, Transactions) against the above.
+7. ~~The three frontend screens (Accounts, Transfer, Transactions)~~ — done: one page
+   (`PageShell`) over the backend above, see
+   [Screen structure, UX, and visual design](#screen-structure-ux-and-visual-design).
 8. Real message broker (Kafka/RabbitMQ) instead of the outbox + webhook stand-in.
 9. Cypress e2e for the create-account → transfer → see-transaction path.
 10. Auth/authz on the API (not a stated requirement — explicitly out of scope here).
@@ -273,78 +323,27 @@ tech-stack table); a real deployment needs a container image, environment-based 
 injection (not the hardcoded defaults in `application.properties`), and a real orchestration
 target (Kubernetes, ECS, etc.) instead of a developer's machine plus `docker compose`.
 
-**Frontend** — doesn't exist yet at all; once it does, production readiness there means a real
-build/deploy pipeline, CDN-served static assets, and client-side error monitoring — none of which
-is relevant to discuss further until the three screens themselves exist.
+**Frontend** — no build/deploy pipeline (currently `nx dev`/`nx build` run by hand), no CDN for
+the static assets, and no client-side error monitoring. Also no i18n library — copy is Hungarian
+strings hardcoded directly in components (see
+[Screen structure, UX, and visual design](#screen-structure-ux-and-visual-design)); a real
+multi-locale product would need to pull that into a proper i18n layer instead of a find-and-replace.
 
 ## Running the app
 
-### Prerequisites
+Full step-by-step setup (prerequisites, clone-to-running walkthrough, smoke test, troubleshooting)
+lives in **[SETUP.md](SETUP.md)** — kept separate from this file since it's a checklist to follow,
+not something to read alongside the architecture/decisions above.
 
-- Node.js 22+ and npm
-- Java 21+ (JDK), with `JAVA_HOME` set and `$JAVA_HOME/bin` on `PATH`. On macOS:
-  `brew install openjdk@21` (keg-only — not symlinked into `/opt/homebrew`, so it won't be found
-  unless exported).
-- Docker (for the local Postgres instance used by `apps/server`).
-
-### Commands
+Quick reference, if the environment is already set up:
 
 ```sh
-npm install                       # install JS deps (once, or after touching apps/client or root package.json)
+npm install
+docker compose up -d postgres     # local Postgres, needed for bootRun (not for `test`)
 
-docker compose up -d postgres     # start local Postgres (needed for bootRun, not for `test`)
-
-npx nx dev client                 # React dev server (Vite)
-npx nx run server:bootRun         # Spring Boot app on :8080 — API docs at :8080/swagger-ui/index.html
+npx nx run server:bootRun         # Spring Boot on :8080 — Swagger UI at :8080/swagger-ui/index.html
+npx nx dev client                 # Vite dev server on :4200
 
 npx nx run-many -t build          # build both apps
 npx nx run-many -t test           # test both apps
-npx nx affected -t build test     # only what changed vs. main
-
-npx nx build client               # client only
-npx nx run server:build           # server only (full Gradle `build`)
-npx nx run server:test            # server only (Gradle `test`)
-
-npx nx graph                      # visualize the project graph
 ```
-
-Any Gradle task name works as an Nx target on `server` (e.g. `npx nx run server:bootJar`,
-`npx nx run server:clean`) without further configuration. `apps/server` is also a normal Gradle
-project and can be driven directly with its wrapper when you want raw Gradle output:
-
-```sh
-cd apps/server
-./gradlew bootRun
-./gradlew test
-```
-
-### Backend notes
-
-The schema is Flyway-managed (`apps/server/src/main/resources/db/migration/V1__init.sql`,
-`account` + `transfer` tables — see `server/README.md` §2); `spring.jpa.hibernate.ddl-auto` is
-`validate` everywhere, never `update`. Two datasources run that same migration for two different
-purposes:
-
-- **PostgreSQL** is the real datasource, configured via `spring.datasource.*` in
-  `application.properties` (`docker-compose.yml` at the repo root brings up a matching local
-  instance mapped to host port `:5732` → the container's standard `5432`, default db/user/password
-  `global_payment_service` / `postgres` / `postgres`; override with the `DB_HOST` / `DB_PORT` /
-  `DB_NAME` / `DB_USER` / `DB_PASSWORD` env vars for other environments).
-- **H2** is for tests: `src/test/resources/application.properties` points at
-  `jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE` so Flyway runs the *same*
-  `V1__init.sql` there too (not a Hibernate-autogenerated schema that could drift from it) —
-  `nx run server:test` still never needs Postgres or Docker running. Needs
-  `org.springframework.boot:spring-boot-flyway` on the classpath explicitly: Spring Boot 4 split
-  Flyway's autoconfiguration out of `spring-boot-autoconfigure`, so `flyway-core` alone silently
-  does nothing (no error, no log line).
-
-### Frontend notes
-
-`apps/client` is a React 19 + TypeScript SPA. Add more shadcn/ui components with:
-
-```sh
-cd apps/client
-npx shadcn@latest add <component>
-```
-
-`@/*` resolves to `apps/client/src/*` (configured in `tsconfig.app.json` and `vite.config.mts`).
