@@ -48,7 +48,10 @@ export function TransferFlowForm() {
 
   const destinationOptions = accounts
     .filter((account) => account.id !== sourceAccount.id)
-    .map((account) => ({ value: account.id, label: `${account.ownerName} · ${account.currency}` }));
+    .map((account) => ({
+      value: account.id,
+      label: `${account.ownerName} · ${account.currency}`,
+    }));
 
   const onSubmit = handleSubmit((values) => submit(values));
 
@@ -57,6 +60,8 @@ export function TransferFlowForm() {
     amount && !Number.isNaN(numericAmount) && numericAmount > 0
       ? `${formatCurrency(numericAmount, sourceAccount.currency)} küldése`
       : 'Küldés';
+
+  // TODO: Show the exchange rate before the user submit the transaction
 
   return (
     <Modal.Content>
@@ -83,13 +88,15 @@ export function TransferFlowForm() {
               size="lg"
             />
             <Typography variant="caption">
-              A devizanem {sourceAccount.currency} — ez a forrásszámla sajátja. Rögzített, nem
-              választható.
+              A devizanem {sourceAccount.currency} — ez a forrásszámla sajátja.
+              Rögzített, nem választható.
             </Typography>
           </div>
         </Modal.Body>
         <Modal.Footer>
-          <Modal.Close render={<Button type="button" variant="secondary" size="lg" />}>
+          <Modal.Close
+            render={<Button type="button" variant="secondary" size="lg" />}
+          >
             Mégse
           </Modal.Close>
           <Button type="submit" size="lg" disabled={!isValid}>

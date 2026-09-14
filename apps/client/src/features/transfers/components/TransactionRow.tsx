@@ -21,13 +21,17 @@ export interface TransactionRowData {
 function formatRelativeDateTime(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
-  const time = date.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString('hu-HU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   if (date.toDateString() === now.toDateString()) return `Ma, ${time}`;
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) return `Tegnap, ${time}`;
+  if (date.toDateString() === yesterday.toDateString())
+    return `Tegnap, ${time}`;
 
   return `${date.toLocaleDateString('hu-HU', { month: 'short', day: 'numeric' })}, ${time}`;
 }
@@ -44,9 +48,13 @@ export function getTransactionRowData(
   accounts: Account[],
 ): TransactionRowData {
   const direction = transfer.fromAccountId === viewerAccountId ? 'out' : 'in';
-  const counterpartyId = direction === 'out' ? transfer.toAccountId : transfer.fromAccountId;
-  const counterparty = accounts.find((account) => account.id === counterpartyId);
-  const viewerCurrency = direction === 'out' ? transfer.sourceCurrency : transfer.targetCurrency;
+  const counterpartyId =
+    direction === 'out' ? transfer.toAccountId : transfer.fromAccountId;
+  const counterparty = accounts.find(
+    (account) => account.id === counterpartyId,
+  );
+  const viewerCurrency =
+    direction === 'out' ? transfer.sourceCurrency : transfer.targetCurrency;
   const convertedAmount = transfer.exchangeRate
     ? transfer.amount * transfer.exchangeRate
     : transfer.amount;
@@ -55,7 +63,10 @@ export function getTransactionRowData(
 
   let secondLine: string;
   if (transfer.status === 'PROCESSING') {
-    secondLine = transfer.sourceCurrency !== transfer.targetCurrency ? 'Árfolyam lekérése' : 'Pénz mozgatása';
+    secondLine =
+      transfer.sourceCurrency !== transfer.targetCurrency
+        ? 'Árfolyam lekérése'
+        : 'Pénz mozgatása';
   } else if (transfer.status === 'FAILED') {
     secondLine = 'Sikertelen utalás';
   } else if (direction === 'in' && transfer.exchangeRate) {
@@ -81,9 +92,13 @@ interface TransactionRowProps {
   accounts: Account[];
 }
 
-export function TransactionRow({ transfer, viewerAccountId, accounts }: TransactionRowProps) {
+export function TransactionRow({
+  transfer,
+  viewerAccountId,
+  accounts,
+}: TransactionRowProps) {
   const row = getTransactionRowData(transfer, viewerAccountId, accounts);
-
+  // TODO: Create the ability to abadone an in progress transaction by the user
   return (
     <Card.Root className="flex-row items-center gap-3 px-3.5">
       <StatusIcon status={transfer.status} direction={row.direction} />

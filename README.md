@@ -11,6 +11,9 @@ and the outbox publisher notifying Fraud Detection/Notification Center (currentl
 log line, a documented stand-in for a real webhook), all against the Flyway-managed schema. The
 frontend doesn't exist yet — see [TODO](#todo) for what's next and why in that order.
 
+## Expectation from the UX/UI team
+  Create a detailed diagram about the transaction flow what we can discuss and refine together before putting it into the sprint. A Figma design with different screen sizes to catch design issues early and iterate on it.
+
 ## Tech stack
 
 | Layer | Choice | Why |
